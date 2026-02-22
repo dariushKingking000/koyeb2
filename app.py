@@ -9,13 +9,18 @@ import hmac
 import hashlib
 from flask import Flask, request, jsonify
 
+# SQLAlchemy
+from sqlalchemy import create_engine, Column, String, BigInteger, Float, Integer, Text, JSON as SA_JSON
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import SQLAlchemyError
+
 # ---------- Configuration (from ENV) ----------
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # set in Koyeb env
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # set in Railway / service variables
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else None
 
-NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY")  # from NowPayments
-NOWPAYMENTS_IPN_SECRET = os.getenv("NOWPAYMENTS_IPN_SECRET")  # from NowPayments (save it once)
-PUBLIC_URL = os.getenv("PUBLIC_URL", "https://example.com")  # your Koyeb app URL
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY")
+NOWPAYMENTS_IPN_SECRET = os.getenv("NOWPAYMENTS_IPN_SECRET")
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://example.com")
 
 APP_NAME = "Mythic AI Store"
 
@@ -29,7 +34,7 @@ PRICES = {
     "vid_001": 10.0,
 }
 
-# replace deliver_url values with your Google Drive direct-download links (uc?export=download&id=...)
+# Catalog (deliver_url should be direct-download links)
 PACKS = {
     "img_001": {
         "id": "img_001",
@@ -64,44 +69,45 @@ logger = logging.getLogger("mythic-bot")
 # ---------- Flask ----------
 app = Flask(__name__)
 
-# ---------- In-memory orders (simple) ----------
-ORDERS = {}  # order_id -> order dict
-ORDERS_LOCK = threading.Lock()
-ORDERS_FILE = "orders.json"
+# ---------- Database (SQLAlchemy) ----------
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("Postgres.DATABASE_URL") or os.getenv("Postgres.DATABASE")  # fallback try
+if not DATABASE_URL:
+    # fallback to local sqlite for development
+    DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "sqlite:///local.db")
+    logger.warning("DATABASE_URL is not set. Falling back to local sqlite (development only).")
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
 
 
-def save_orders_to_disk():
-    try:
-        with ORDERS_LOCK:
-            with open(ORDERS_FILE, "w") as f:
-                json.dump(ORDERS, f, indent=2)
-    except Exception as e:
-        logger.exception("Failed to save orders: %s", e)
+class Order(Base):
+    __tablename__ = "orders"
+    # keep order_id as string to match previous format ORD{ms}
+    order_id = Column(String, primary_key=True, index=True)
+    user_id = Column(BigInteger, nullable=False, index=True)
+    product_id = Column(String, nullable=False)
+    price = Column(Float, nullable=False)
+    currency = Column(String, nullable=False, default="USDT")
+    status = Column(String, nullable=False, default="pending")
+    invoice = Column(SA_JSON, nullable=True)
+    created_at = Column(BigInteger, nullable=False)  # epoch seconds
+    paid_at = Column(BigInteger, nullable=True)
+    tx_info = Column(SA_JSON, nullable=True)
 
 
-def load_orders_from_disk():
-    try:
-        if os.path.exists(ORDERS_FILE):
-            with open(ORDERS_FILE, "r") as f:
-                data = json.load(f)
-            with ORDERS_LOCK:
-                ORDERS.update(data)
-            logger.info("Loaded %d orders from disk", len(ORDERS))
-    except Exception as e:
-        logger.exception("Failed to load orders: %s", e)
+# create tables
+Base.metadata.create_all(bind=engine)
 
 
-load_orders_from_disk()
-
-# ---------- Telegram helpers ----------
+# ---------- Helpers: Telegram HTTP ----------
 def telegram_request(method, payload):
     if not API_URL:
         logger.error("BOT_TOKEN is not set")
         return
-
     url = f"{API_URL}/{method}"
     try:
-        r = requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json=payload, timeout=15)
         if r.status_code != 200:
             logger.warning("Telegram API returned %s: %s", r.status_code, r.text)
         return r.json()
@@ -187,37 +193,146 @@ def invoice_kb(order_id):
     }
 
 
-# ---------- Utilities ----------
+# ---------- Utilities (DB) ----------
 def generate_order_id():
     return f"ORD{int(time.time() * 1000)}"
 
 
-def create_order(user_id, pack_id):
-    order_id = generate_order_id()
-    price = PRICES.get(pack_id, 1.0)
-    order = {
-        "order_id": order_id,
-        "user_id": user_id,
-        "product_id": pack_id,
-        "price": price,
-        "currency": "USDT",
-        "status": "pending",
-        "invoice": None,
-        "created_at": int(time.time()),
-    }
-    with ORDERS_LOCK:
-        ORDERS[order_id] = order
-    save_orders_to_disk()
-    return order
+def create_order_db(user_id, pack_id):
+    session = SessionLocal()
+    try:
+        order_id = generate_order_id()
+        price = float(PRICES.get(pack_id, 1.0))
+        created_at = int(time.time())
+        o = Order(
+            order_id=order_id,
+            user_id=int(user_id),
+            product_id=pack_id,
+            price=price,
+            currency="USDT",
+            status="pending",
+            invoice=None,
+            created_at=created_at,
+            paid_at=None,
+            tx_info=None,
+        )
+        session.add(o)
+        session.commit()
+        # refresh to ensure persisted
+        session.refresh(o)
+        return {
+            "order_id": o.order_id,
+            "user_id": o.user_id,
+            "product_id": o.product_id,
+            "price": o.price,
+            "currency": o.currency,
+            "status": o.status,
+            "created_at": o.created_at,
+            "invoice": o.invoice,
+        }
+    except Exception as e:
+        session.rollback()
+        logger.exception("Failed to create order in DB: %s", e)
+        raise
+    finally:
+        session.close()
 
 
-def create_invoice_nowpayments(order):
+def get_order_db(order_id):
+    session = SessionLocal()
+    try:
+        o = session.query(Order).filter_by(order_id=order_id).first()
+        if not o:
+            return None
+        return {
+            "order_id": o.order_id,
+            "user_id": o.user_id,
+            "product_id": o.product_id,
+            "price": o.price,
+            "currency": o.currency,
+            "status": o.status,
+            "invoice": o.invoice,
+            "created_at": o.created_at,
+            "paid_at": o.paid_at,
+            "tx_info": o.tx_info,
+        }
+    finally:
+        session.close()
+
+
+def list_user_orders_db(user_id):
+    session = SessionLocal()
+    try:
+        rows = session.query(Order).filter_by(user_id=int(user_id)).order_by(Order.created_at.desc()).all()
+        res = []
+        for o in rows:
+            res.append({
+                "order_id": o.order_id,
+                "product_id": o.product_id,
+                "price": o.price,
+                "currency": o.currency,
+                "status": o.status,
+                "created_at": o.created_at,
+                "paid_at": o.paid_at
+            })
+        return res
+    finally:
+        session.close()
+
+
+def update_order_invoice_db(order_id, invoice_obj):
+    session = SessionLocal()
+    try:
+        o = session.query(Order).filter_by(order_id=order_id).first()
+        if not o:
+            return None
+        o.invoice = invoice_obj
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to update invoice")
+        return False
+    finally:
+        session.close()
+
+
+def mark_order_paid_db(order_id, tx_info=None):
+    session = SessionLocal()
+    try:
+        o = session.query(Order).filter_by(order_id=order_id).first()
+        if not o:
+            return False
+        o.status = "paid"
+        o.paid_at = int(time.time())
+        o.tx_info = tx_info
+        session.commit()
+        # deliver file to user
+        try:
+            chat_id = o.user_id
+            product = PACKS.get(o.product_id)
+            if product:
+                send_message(chat_id, f"✅ Payment confirmed for <b>{product['title']}</b>\nPreparing your download...")
+                send_document(chat_id, product.get("deliver_url"), caption="Here is your pack. Thank you!")
+            else:
+                send_message(chat_id, "✅ Payment confirmed. Your file is ready.")
+        except Exception:
+            logger.exception("Failed to deliver file after marking paid")
+        return True
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to mark order paid")
+        return False
+    finally:
+        session.close()
+
+
+# ---------- NowPayments integration ----------
+def create_invoice_nowpayments_db(order):
     """
-    Create invoice via NowPayments API. If API key missing/fails, fallback to a fake invoice.
-    NOTE: adjust fields per NowPayments docs if their API changes.
+    Create invoice via NowPayments. If API key missing, create fake invoice.
     """
     if not NOWPAYMENTS_API_KEY:
-        # fake invoice for local testing
         fake = {
             "id": f"fake-inv-{order['order_id']}",
             "pay_url": f"{PUBLIC_URL}/pay/{order['order_id']}",
@@ -225,10 +340,7 @@ def create_invoice_nowpayments(order):
             "price_amount": order["price"],
             "price_currency": order["currency"],
         }
-        order["invoice"] = fake
-        with ORDERS_LOCK:
-            ORDERS[order["order_id"]] = order
-        save_orders_to_disk()
+        update_order_invoice_db(order["order_id"], fake)
         return fake
 
     url = "https://api.nowpayments.io/v1/invoice"
@@ -239,19 +351,15 @@ def create_invoice_nowpayments(order):
         "order_id": order["order_id"],
         "order_description": f"{APP_NAME} - {order['product_id']}",
         "ipn_callback_url": f"{PUBLIC_URL}/nowpayments_webhook",
-        # optional: "success_url": ..., "cancel_url": ...
     }
     try:
         r = requests.post(url, headers=headers, json=payload, timeout=15)
         r.raise_for_status()
         data = r.json()
-        order["invoice"] = data
-        with ORDERS_LOCK:
-            ORDERS[order["order_id"]] = order
-        save_orders_to_disk()
+        update_order_invoice_db(order["order_id"], data)
         return data
-    except Exception as e:
-        logger.exception("NowPayments invoice creation failed: %s", e)
+    except Exception:
+        logger.exception("NowPayments invoice creation failed")
         # fallback fake
         fake = {
             "id": f"fallback-inv-{order['order_id']}",
@@ -260,35 +368,8 @@ def create_invoice_nowpayments(order):
             "price_amount": order["price"],
             "price_currency": order["currency"],
         }
-        order["invoice"] = fake
-        with ORDERS_LOCK:
-            ORDERS[order["order_id"]] = order
-        save_orders_to_disk()
+        update_order_invoice_db(order["order_id"], fake)
         return fake
-
-
-def mark_order_paid(order_id, tx_info=None):
-    with ORDERS_LOCK:
-        order = ORDERS.get(order_id)
-        if not order:
-            return False
-        order["status"] = "paid"
-        order["paid_at"] = int(time.time())
-        order["tx_info"] = tx_info
-        ORDERS[order_id] = order
-    save_orders_to_disk()
-    # deliver file to user
-    try:
-        chat_id = order["user_id"]
-        product = PACKS.get(order["product_id"])
-        if product:
-            send_message(chat_id, f"✅ Payment confirmed for <b>{product['title']}</b>\nPreparing your download...")
-            send_document(chat_id, product.get("deliver_url"), caption="Here is your pack. Thank you!")
-        else:
-            send_message(chat_id, "✅ Payment confirmed. Your file is ready.")
-    except Exception as e:
-        logger.exception("Failed to deliver file: %s", e)
-    return True
 
 
 # ---------- Core Logic ----------
@@ -305,13 +386,12 @@ def handle_update(update):
                 return
 
             if text and text.lower().strip() == "orders":
-                with ORDERS_LOCK:
-                    user_orders = [o for o in ORDERS.values() if o.get("user_id") == chat_id]
+                user_orders = list_user_orders_db(chat_id)
                 if not user_orders:
                     send_message(chat_id, "You have no orders yet.")
                 else:
                     txt = "Your orders:\n\n"
-                    for o in sorted(user_orders, key=lambda x: x["created_at"], reverse=True):
+                    for o in user_orders:
                         txt += f"{o['order_id']} - {o['product_id']} - {o['price']} {o['currency']} - {o['status']}\n"
                     send_message(chat_id, txt)
                 return
@@ -361,33 +441,39 @@ def handle_update(update):
                 if pid not in PACKS:
                     send_message(chat_id, "Product not found.")
                     return
-                order = create_order(chat_id, pid)
+                order = create_order_db(chat_id, pid)
                 send_message(chat_id, f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\nChoose payment method:", reply_markup=payment_select_kb(order["order_id"]))
                 return
 
             # cancel
             if data.startswith("cancel:"):
                 oid = data.split(":", 1)[1]
-                with ORDERS_LOCK:
-                    o = ORDERS.get(oid)
-                    if o and o["user_id"] == chat_id:
-                        o["status"] = "cancelled"
-                        ORDERS[oid] = o
-                        save_orders_to_disk()
-                        send_message(chat_id, f"Order {oid} cancelled.")
-                    else:
-                        send_message(chat_id, "Order not found or not yours.")
+                o = get_order_db(oid)
+                if o and o["user_id"] == chat_id:
+                    # simple cancel: only update status if pending
+                    session = SessionLocal()
+                    try:
+                        dbo = session.query(Order).filter_by(order_id=oid).first()
+                        if dbo and dbo.status == "pending":
+                            dbo.status = "cancelled"
+                            session.commit()
+                            send_message(chat_id, f"Order {oid} cancelled.")
+                        else:
+                            send_message(chat_id, "Order not found or cannot cancel.")
+                    finally:
+                        session.close()
+                else:
+                    send_message(chat_id, "Order not found or not yours.")
                 return
 
             # pay now -> create invoice (NowPayments or fake)
             if data.startswith("pay_now:"):
                 oid = data.split(":", 1)[1]
-                with ORDERS_LOCK:
-                    order = ORDERS.get(oid)
+                order = get_order_db(oid)
                 if not order:
                     send_message(chat_id, "Order not found.")
                     return
-                invoice = create_invoice_nowpayments(order)
+                invoice = create_invoice_nowpayments_db(order)
                 pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
                 send_message(chat_id, f"Invoice created.\nPay here: {pay_url}\nAfter payment press <b>I Paid (check)</b>.", reply_markup=invoice_kb(oid))
                 return
@@ -395,14 +481,13 @@ def handle_update(update):
             # check paid (manual check)
             if data.startswith("check_paid:"):
                 oid = data.split(":", 1)[1]
-                with ORDERS_LOCK:
-                    order = ORDERS.get(oid)
-                if not order:
+                o = get_order_db(oid)
+                if not o:
                     send_message(chat_id, "Order not found.")
                     return
-                invoice = order.get("invoice") or {}
-                if order["status"] == "paid" or invoice.get("status") == "paid":
-                    mark_order_paid(oid, tx_info=invoice)
+                invoice = o.get("invoice") or {}
+                if o["status"] == "paid" or (isinstance(invoice, dict) and invoice.get("status") == "paid"):
+                    mark_order_paid_db(oid, tx_info=invoice)
                     send_message(chat_id, f"Order {oid} is already paid and delivered.")
                 else:
                     send_message(chat_id, "Payment not detected yet. If you really paid, wait a minute or try again.")
@@ -411,12 +496,11 @@ def handle_update(update):
             # retry -> generate new invoice
             if data.startswith("retry:"):
                 oid = data.split(":", 1)[1]
-                with ORDERS_LOCK:
-                    order = ORDERS.get(oid)
+                order = get_order_db(oid)
                 if not order:
                     send_message(chat_id, "Order not found.")
                     return
-                invoice = create_invoice_nowpayments(order)
+                invoice = create_invoice_nowpayments_db(order)
                 pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
                 send_message(chat_id, f"New invoice: {pay_url}", reply_markup=invoice_kb(oid))
                 return
@@ -439,6 +523,7 @@ def health():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = request.get_json(force=True)
+    # handle in background thread to quickly respond to Telegram
     threading.Thread(target=handle_update, args=(update,)).start()
     return "ok", 200
 
@@ -461,63 +546,47 @@ def nowpayments_webhook():
     # verify signature if secret is set
     received_sig = request.headers.get("x-nowpayments-sig")
     if NOWPAYMENTS_IPN_SECRET and received_sig:
-        # Recreate signed string: JSON with sorted keys, no extra spaces
         sorted_json = json.dumps(data, separators=(',', ':'), sort_keys=True)
         generated_sig = hmac.new(NOWPAYMENTS_IPN_SECRET.encode(), sorted_json.encode(), hashlib.sha512).hexdigest()
         if generated_sig != received_sig:
-            logger.warning("Invalid NOWPayments signature: %s (expected %s)", received_sig, generated_sig)
+            logger.warning("Invalid NOWPayments signature")
             return jsonify({"ok": False, "reason": "invalid_signature"}), 403
 
-    # extract order id from payload (best-effort)
     order_id = data.get("order_id") or data.get("orderId") or (data.get("invoice") or {}).get("order_id") or data.get("purchase_id")
-    status = data.get("status") or data.get("payment_status") or (data.get("invoice") or {}).get("status") or data.get("payment_status")
+    status = data.get("status") or data.get("payment_status") or (data.get("invoice") or {}).get("status")
 
     if not order_id:
         logger.warning("No order_id in webhook payload")
         return jsonify({"ok": False, "reason": "no_order_id"}), 400
 
-    # treat statuses that indicate success
     if str(status).lower() in ("finished", "paid", "success", "confirmed"):
-        # optional: verify amount matches expected (if payload contains price fields)
-        with ORDERS_LOCK:
-            order = ORDERS.get(order_id)
-        if order:
-            # optional safety: compare price if provided
+        # optional: validate amount
+        o = get_order_db(order_id)
+        if o:
             pay_amount = data.get("price_amount") or data.get("pay_amount") or (data.get("invoice") or {}).get("price_amount")
-            if pay_amount is not None:
-                # NowPayments may return price in different currency — this is a best-effort check
-                try:
-                    if float(pay_amount) < float(order.get("price", 0)) * 0.99:
-                        logger.warning("Paid amount %s less than expected %s for order %s", pay_amount, order.get("price"), order_id)
-                        # continue anyway or reject — here we still mark paid for simplicity
-                except Exception:
-                    pass
-        mark_order_paid(order_id, tx_info=data)
+            try:
+                if pay_amount is not None and float(pay_amount) < float(o["price"]) * 0.99:
+                    logger.warning("Paid amount %s less than expected %s for order %s", pay_amount, o["price"], order_id)
+            except Exception:
+                pass
+        mark_order_paid_db(order_id, tx_info=data)
         return jsonify({"ok": True}), 200
     else:
         # update invoice status in order record
-        with ORDERS_LOCK:
-            order = ORDERS.get(order_id)
-            if order:
-                order_invoice = order.get("invoice") or {}
-                order_invoice.update({"status": status})
-                order["invoice"] = order_invoice
-                ORDERS[order_id] = order
-                save_orders_to_disk()
+        update_order_invoice_db(order_id, {"status": status})
         return jsonify({"ok": True, "status": status}), 200
 
 
 # Simple fake pay page (optional convenience for local testing)
 @app.route("/pay/<order_id>")
 def pay_page(order_id):
-    with ORDERS_LOCK:
-        order = ORDERS.get(order_id)
-    if not order:
+    o = get_order_db(order_id)
+    if not o:
         return "Order not found", 404
     html = f"""
     <html><body>
       <h3>Fake pay page for order {order_id}</h3>
-      <p>Amount: {order['price']} {order['currency']}</p>
+      <p>Amount: {o['price']} {o['currency']}</p>
       <form action="/pay_simulate/{order_id}" method="post">
         <button type="submit">Simulate payment (mark as paid)</button>
       </form>
@@ -528,12 +597,11 @@ def pay_page(order_id):
 
 @app.route("/pay_simulate/<order_id>", methods=["POST"])
 def pay_simulate(order_id):
-    with ORDERS_LOCK:
-        order = ORDERS.get(order_id)
-    if not order:
+    o = get_order_db(order_id)
+    if not o:
         return "Order not found", 404
     payload = {"order_id": order_id, "status": "finished", "invoice_id": f"sim-{order_id}"}
-    mark_order_paid(order_id, tx_info=payload)
+    mark_order_paid_db(order_id, tx_info=payload)
     return f"Order {order_id} marked as paid (simulated). You can return to Telegram."
 
 
@@ -544,4 +612,5 @@ if __name__ == "__main__":
     if not NOWPAYMENTS_API_KEY:
         logger.warning("NOWPAYMENTS_API_KEY is NOT set. Invoices will be simulated.")
     logger.info("Starting %s ...", APP_NAME)
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    port = int(os.getenv("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
