@@ -1,18 +1,35 @@
+# app.py
 import os
+import json
+import time
 import logging
 import threading
 import requests
+import hmac
+import hashlib
 from flask import Flask, request, jsonify
 
-# ---------- Configuration ----------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# ---------- Configuration (from ENV) ----------
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # set in Koyeb env
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else None
+
+NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY")  # from NowPayments
+NOWPAYMENTS_IPN_SECRET = os.getenv("NOWPAYMENTS_IPN_SECRET")  # from NowPayments (save it once)
+PUBLIC_URL = os.getenv("PUBLIC_URL", "https://example.com")  # your Koyeb app URL
 
 APP_NAME = "Mythic AI Store"
 
 DEFAULT_DEMO_IMAGE = "https://via.placeholder.com/1024x768.png?text=Demo+Image"
 DEFAULT_DEMO_VIDEO = "https://via.placeholder.com/1280x720.png?text=Demo+Video"
 
+# Prices (in USDT)
+PRICES = {
+    "img_001": 5.0,
+    "img_002": 4.0,
+    "vid_001": 10.0,
+}
+
+# replace deliver_url values with your Google Drive direct-download links (uc?export=download&id=...)
 PACKS = {
     "img_001": {
         "id": "img_001",
@@ -20,6 +37,7 @@ PACKS = {
         "description": "High-quality AI-generated anime images.",
         "type": "image",
         "demo_url": DEFAULT_DEMO_IMAGE,
+        "deliver_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
     },
     "img_002": {
         "id": "img_002",
@@ -27,6 +45,7 @@ PACKS = {
         "description": "Photorealistic AI images.",
         "type": "image",
         "demo_url": DEFAULT_DEMO_IMAGE,
+        "deliver_url": "https://drive.google.com/uc?export=download&id=REPLACE_WITH_YOUR_ID",
     },
     "vid_001": {
         "id": "vid_001",
@@ -34,6 +53,7 @@ PACKS = {
         "description": "Short cinematic AI video.",
         "type": "video",
         "demo_url": DEFAULT_DEMO_VIDEO,
+        "deliver_url": "https://drive.google.com/uc?export=download&id=REPLACE_WITH_YOUR_ID",
     }
 }
 
@@ -44,6 +64,35 @@ logger = logging.getLogger("mythic-bot")
 # ---------- Flask ----------
 app = Flask(__name__)
 
+# ---------- In-memory orders (simple) ----------
+ORDERS = {}  # order_id -> order dict
+ORDERS_LOCK = threading.Lock()
+ORDERS_FILE = "orders.json"
+
+
+def save_orders_to_disk():
+    try:
+        with ORDERS_LOCK:
+            with open(ORDERS_FILE, "w") as f:
+                json.dump(ORDERS, f, indent=2)
+    except Exception as e:
+        logger.exception("Failed to save orders: %s", e)
+
+
+def load_orders_from_disk():
+    try:
+        if os.path.exists(ORDERS_FILE):
+            with open(ORDERS_FILE, "r") as f:
+                data = json.load(f)
+            with ORDERS_LOCK:
+                ORDERS.update(data)
+            logger.info("Loaded %d orders from disk", len(ORDERS))
+    except Exception as e:
+        logger.exception("Failed to load orders: %s", e)
+
+
+load_orders_from_disk()
+
 # ---------- Telegram helpers ----------
 def telegram_request(method, payload):
     if not API_URL:
@@ -52,20 +101,19 @@ def telegram_request(method, payload):
 
     url = f"{API_URL}/{method}"
     try:
-        requests.post(url, json=payload, timeout=3)
+        r = requests.post(url, json=payload, timeout=10)
+        if r.status_code != 200:
+            logger.warning("Telegram API returned %s: %s", r.status_code, r.text)
+        return r.json()
     except Exception as e:
         logger.exception("Telegram request failed: %s", e)
 
 
 def send_message(chat_id, text, reply_markup=None):
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    telegram_request("sendMessage", payload)
+    return telegram_request("sendMessage", payload)
 
 
 def send_photo(chat_id, photo, caption=None, reply_markup=None):
@@ -75,7 +123,15 @@ def send_photo(chat_id, photo, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = reply_markup
-    telegram_request("sendPhoto", payload)
+    return telegram_request("sendPhoto", payload)
+
+
+def send_document(chat_id, doc_url, caption=None):
+    payload = {"chat_id": chat_id, "document": doc_url}
+    if caption:
+        payload["caption"] = caption
+        payload["parse_mode"] = "HTML"
+    return telegram_request("sendDocument", payload)
 
 
 def answer_callback(cq_id):
@@ -107,62 +163,266 @@ def pack_actions(pack_id):
     return {
         "inline_keyboard": [
             [{"text": "📤 Demo Preview", "callback_data": f"demo_pack:{pack_id}"}],
+            [{"text": "💳 Buy", "callback_data": f"buy:{pack_id}"}],
             [{"text": "🔙 Back", "callback_data": "back"}],
         ]
     }
 
 
+def payment_select_kb(order_id):
+    return {
+        "inline_keyboard": [
+            [{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{order_id}"}],
+            [{"text": "❌ Cancel", "callback_data": f"cancel:{order_id}"}],
+        ]
+    }
+
+
+def invoice_kb(order_id):
+    return {
+        "inline_keyboard": [
+            [{"text": "✅ I Paid (check)", "callback_data": f"check_paid:{order_id}"}],
+            [{"text": "🔁 Retry / New Invoice", "callback_data": f"retry:{order_id}"}],
+        ]
+    }
+
+
+# ---------- Utilities ----------
+def generate_order_id():
+    return f"ORD{int(time.time() * 1000)}"
+
+
+def create_order(user_id, pack_id):
+    order_id = generate_order_id()
+    price = PRICES.get(pack_id, 1.0)
+    order = {
+        "order_id": order_id,
+        "user_id": user_id,
+        "product_id": pack_id,
+        "price": price,
+        "currency": "USDT",
+        "status": "pending",
+        "invoice": None,
+        "created_at": int(time.time()),
+    }
+    with ORDERS_LOCK:
+        ORDERS[order_id] = order
+    save_orders_to_disk()
+    return order
+
+
+def create_invoice_nowpayments(order):
+    """
+    Create invoice via NowPayments API. If API key missing/fails, fallback to a fake invoice.
+    NOTE: adjust fields per NowPayments docs if their API changes.
+    """
+    if not NOWPAYMENTS_API_KEY:
+        # fake invoice for local testing
+        fake = {
+            "id": f"fake-inv-{order['order_id']}",
+            "pay_url": f"{PUBLIC_URL}/pay/{order['order_id']}",
+            "status": "waiting",
+            "price_amount": order["price"],
+            "price_currency": order["currency"],
+        }
+        order["invoice"] = fake
+        with ORDERS_LOCK:
+            ORDERS[order["order_id"]] = order
+        save_orders_to_disk()
+        return fake
+
+    url = "https://api.nowpayments.io/v1/invoice"
+    headers = {"x-api-key": NOWPAYMENTS_API_KEY, "Content-Type": "application/json"}
+    payload = {
+        "price_amount": order["price"],
+        "price_currency": order["currency"],
+        "order_id": order["order_id"],
+        "order_description": f"{APP_NAME} - {order['product_id']}",
+        "ipn_callback_url": f"{PUBLIC_URL}/nowpayments_webhook",
+        # optional: "success_url": ..., "cancel_url": ...
+    }
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        order["invoice"] = data
+        with ORDERS_LOCK:
+            ORDERS[order["order_id"]] = order
+        save_orders_to_disk()
+        return data
+    except Exception as e:
+        logger.exception("NowPayments invoice creation failed: %s", e)
+        # fallback fake
+        fake = {
+            "id": f"fallback-inv-{order['order_id']}",
+            "pay_url": f"{PUBLIC_URL}/pay/{order['order_id']}",
+            "status": "waiting",
+            "price_amount": order["price"],
+            "price_currency": order["currency"],
+        }
+        order["invoice"] = fake
+        with ORDERS_LOCK:
+            ORDERS[order["order_id"]] = order
+        save_orders_to_disk()
+        return fake
+
+
+def mark_order_paid(order_id, tx_info=None):
+    with ORDERS_LOCK:
+        order = ORDERS.get(order_id)
+        if not order:
+            return False
+        order["status"] = "paid"
+        order["paid_at"] = int(time.time())
+        order["tx_info"] = tx_info
+        ORDERS[order_id] = order
+    save_orders_to_disk()
+    # deliver file to user
+    try:
+        chat_id = order["user_id"]
+        product = PACKS.get(order["product_id"])
+        if product:
+            send_message(chat_id, f"✅ Payment confirmed for <b>{product['title']}</b>\nPreparing your download...")
+            send_document(chat_id, product.get("deliver_url"), caption="Here is your pack. Thank you!")
+        else:
+            send_message(chat_id, "✅ Payment confirmed. Your file is ready.")
+    except Exception as e:
+        logger.exception("Failed to deliver file: %s", e)
+    return True
+
+
 # ---------- Core Logic ----------
 def handle_update(update):
-    if "message" in update:
-        chat_id = update["message"]["chat"]["id"]
-        text = update["message"].get("text", "")
+    try:
+        # plain message
+        if "message" in update:
+            msg = update["message"]
+            chat_id = msg["chat"]["id"]
+            text = msg.get("text", "")
 
-        if text == "/start":
-            send_message(
-                chat_id,
-                f"👋 <b>Welcome to {APP_NAME}</b>\nChoose:",
-                reply_markup=main_menu()
-            )
+            if text == "/start":
+                send_message(chat_id, f"👋 <b>Welcome to {APP_NAME}</b>\nChoose:", reply_markup=main_menu())
+                return
 
-    elif "callback_query" in update:
-        q = update["callback_query"]
-        data = q["data"]
-        chat_id = q["message"]["chat"]["id"]
+            if text and text.lower().strip() == "orders":
+                with ORDERS_LOCK:
+                    user_orders = [o for o in ORDERS.values() if o.get("user_id") == chat_id]
+                if not user_orders:
+                    send_message(chat_id, "You have no orders yet.")
+                else:
+                    txt = "Your orders:\n\n"
+                    for o in sorted(user_orders, key=lambda x: x["created_at"], reverse=True):
+                        txt += f"{o['order_id']} - {o['product_id']} - {o['price']} {o['currency']} - {o['status']}\n"
+                    send_message(chat_id, txt)
+                return
 
-        answer_callback(q["id"])
+        # callback queries (inline buttons)
+        if "callback_query" in update:
+            q = update["callback_query"]
+            data = q["data"]
+            chat_id = q["message"]["chat"]["id"]
+            cq_id = q["id"]
 
-        if data == "images":
-            send_message(chat_id, "🖼 Image Packs:", packs_keyboard("image"))
+            answer_callback(cq_id)
 
-        elif data == "videos":
-            send_message(chat_id, "🎥 Video Packs:", packs_keyboard("video"))
+            if data == "images":
+                send_message(chat_id, "🖼 Image Packs:", packs_keyboard("image"))
+                return
+            if data == "videos":
+                send_message(chat_id, "🎥 Video Packs:", packs_keyboard("video"))
+                return
+            if data == "demo":
+                send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Free demo image")
+                return
+            if data == "about":
+                send_message(chat_id, "🤖 Mythic AI Store\nAI-generated image & video packs.")
+                return
+            if data == "back":
+                send_message(chat_id, "Main menu:", main_menu())
+                return
 
-        elif data == "demo":
-            send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Free demo image")
+            if data.startswith("pack:"):
+                pid = data.split(":", 1)[1]
+                p = PACKS.get(pid)
+                if p:
+                    send_photo(chat_id, p["demo_url"], f"<b>{p['title']}</b>\n{p['description']}", pack_actions(pid))
+                return
 
-        elif data == "about":
-            send_message(chat_id, "🤖 Mythic AI Store\nAI-generated image & video packs.")
+            if data.startswith("demo_pack:"):
+                pid = data.split(":", 1)[1]
+                p = PACKS.get(pid)
+                if p:
+                    send_photo(chat_id, p["demo_url"], "📤 Demo preview")
+                return
 
-        elif data == "back":
-            send_message(chat_id, "Main menu:", main_menu())
+            # BUY flow
+            if data.startswith("buy:"):
+                pid = data.split(":", 1)[1]
+                if pid not in PACKS:
+                    send_message(chat_id, "Product not found.")
+                    return
+                order = create_order(chat_id, pid)
+                send_message(chat_id, f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\nChoose payment method:", reply_markup=payment_select_kb(order["order_id"]))
+                return
 
-        elif data.startswith("pack:"):
-            pid = data.split(":")[1]
-            p = PACKS.get(pid)
-            if p:
-                send_photo(
-                    chat_id,
-                    p["demo_url"],
-                    f"<b>{p['title']}</b>\n{p['description']}",
-                    pack_actions(pid)
-                )
+            # cancel
+            if data.startswith("cancel:"):
+                oid = data.split(":", 1)[1]
+                with ORDERS_LOCK:
+                    o = ORDERS.get(oid)
+                    if o and o["user_id"] == chat_id:
+                        o["status"] = "cancelled"
+                        ORDERS[oid] = o
+                        save_orders_to_disk()
+                        send_message(chat_id, f"Order {oid} cancelled.")
+                    else:
+                        send_message(chat_id, "Order not found or not yours.")
+                return
 
-        elif data.startswith("demo_pack:"):
-            pid = data.split(":")[1]
-            p = PACKS.get(pid)
-            if p:
-                send_photo(chat_id, p["demo_url"], "📤 Demo preview")
+            # pay now -> create invoice (NowPayments or fake)
+            if data.startswith("pay_now:"):
+                oid = data.split(":", 1)[1]
+                with ORDERS_LOCK:
+                    order = ORDERS.get(oid)
+                if not order:
+                    send_message(chat_id, "Order not found.")
+                    return
+                invoice = create_invoice_nowpayments(order)
+                pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
+                send_message(chat_id, f"Invoice created.\nPay here: {pay_url}\nAfter payment press <b>I Paid (check)</b>.", reply_markup=invoice_kb(oid))
+                return
+
+            # check paid (manual check)
+            if data.startswith("check_paid:"):
+                oid = data.split(":", 1)[1]
+                with ORDERS_LOCK:
+                    order = ORDERS.get(oid)
+                if not order:
+                    send_message(chat_id, "Order not found.")
+                    return
+                invoice = order.get("invoice") or {}
+                if order["status"] == "paid" or invoice.get("status") == "paid":
+                    mark_order_paid(oid, tx_info=invoice)
+                    send_message(chat_id, f"Order {oid} is already paid and delivered.")
+                else:
+                    send_message(chat_id, "Payment not detected yet. If you really paid, wait a minute or try again.")
+                return
+
+            # retry -> generate new invoice
+            if data.startswith("retry:"):
+                oid = data.split(":", 1)[1]
+                with ORDERS_LOCK:
+                    order = ORDERS.get(oid)
+                if not order:
+                    send_message(chat_id, "Order not found.")
+                    return
+                invoice = create_invoice_nowpayments(order)
+                pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
+                send_message(chat_id, f"New invoice: {pay_url}", reply_markup=invoice_kb(oid))
+                return
+
+    except Exception as e:
+        logger.exception("handle_update failed: %s", e)
 
 
 # ---------- Routes ----------
@@ -183,8 +443,105 @@ def webhook():
     return "ok", 200
 
 
+@app.route("/nowpayments_webhook", methods=["POST"])
+def nowpayments_webhook():
+    """
+    NowPayments IPN webhook handler with HMAC verification.
+    Make sure your NowPayments dashboard ipn_callback_url is set to:
+      PUBLIC_URL + "/nowpayments_webhook"
+    """
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        logger.exception("Invalid JSON in webhook")
+        return jsonify({"ok": False}), 400
+
+    logger.info("NowPayments webhook received: %s", data)
+
+    # verify signature if secret is set
+    received_sig = request.headers.get("x-nowpayments-sig")
+    if NOWPAYMENTS_IPN_SECRET and received_sig:
+        # Recreate signed string: JSON with sorted keys, no extra spaces
+        sorted_json = json.dumps(data, separators=(',', ':'), sort_keys=True)
+        generated_sig = hmac.new(NOWPAYMENTS_IPN_SECRET.encode(), sorted_json.encode(), hashlib.sha512).hexdigest()
+        if generated_sig != received_sig:
+            logger.warning("Invalid NOWPayments signature: %s (expected %s)", received_sig, generated_sig)
+            return jsonify({"ok": False, "reason": "invalid_signature"}), 403
+
+    # extract order id from payload (best-effort)
+    order_id = data.get("order_id") or data.get("orderId") or (data.get("invoice") or {}).get("order_id") or data.get("purchase_id")
+    status = data.get("status") or data.get("payment_status") or (data.get("invoice") or {}).get("status") or data.get("payment_status")
+
+    if not order_id:
+        logger.warning("No order_id in webhook payload")
+        return jsonify({"ok": False, "reason": "no_order_id"}), 400
+
+    # treat statuses that indicate success
+    if str(status).lower() in ("finished", "paid", "success", "confirmed"):
+        # optional: verify amount matches expected (if payload contains price fields)
+        with ORDERS_LOCK:
+            order = ORDERS.get(order_id)
+        if order:
+            # optional safety: compare price if provided
+            pay_amount = data.get("price_amount") or data.get("pay_amount") or (data.get("invoice") or {}).get("price_amount")
+            if pay_amount is not None:
+                # NowPayments may return price in different currency — this is a best-effort check
+                try:
+                    if float(pay_amount) < float(order.get("price", 0)) * 0.99:
+                        logger.warning("Paid amount %s less than expected %s for order %s", pay_amount, order.get("price"), order_id)
+                        # continue anyway or reject — here we still mark paid for simplicity
+                except Exception:
+                    pass
+        mark_order_paid(order_id, tx_info=data)
+        return jsonify({"ok": True}), 200
+    else:
+        # update invoice status in order record
+        with ORDERS_LOCK:
+            order = ORDERS.get(order_id)
+            if order:
+                order_invoice = order.get("invoice") or {}
+                order_invoice.update({"status": status})
+                order["invoice"] = order_invoice
+                ORDERS[order_id] = order
+                save_orders_to_disk()
+        return jsonify({"ok": True, "status": status}), 200
+
+
+# Simple fake pay page (optional convenience for local testing)
+@app.route("/pay/<order_id>")
+def pay_page(order_id):
+    with ORDERS_LOCK:
+        order = ORDERS.get(order_id)
+    if not order:
+        return "Order not found", 404
+    html = f"""
+    <html><body>
+      <h3>Fake pay page for order {order_id}</h3>
+      <p>Amount: {order['price']} {order['currency']}</p>
+      <form action="/pay_simulate/{order_id}" method="post">
+        <button type="submit">Simulate payment (mark as paid)</button>
+      </form>
+    </body></html>
+    """
+    return html
+
+
+@app.route("/pay_simulate/<order_id>", methods=["POST"])
+def pay_simulate(order_id):
+    with ORDERS_LOCK:
+        order = ORDERS.get(order_id)
+    if not order:
+        return "Order not found", 404
+    payload = {"order_id": order_id, "status": "finished", "invoice_id": f"sim-{order_id}"}
+    mark_order_paid(order_id, tx_info=payload)
+    return f"Order {order_id} marked as paid (simulated). You can return to Telegram."
+
+
 # ---------- Run ----------
 if __name__ == "__main__":
     if not BOT_TOKEN:
-        logger.warning("BOT_TOKEN is NOT set")
-    app.run(host="0.0.0.0", port=8000)
+        logger.warning("BOT_TOKEN is NOT set. Telegram messages will fail.")
+    if not NOWPAYMENTS_API_KEY:
+        logger.warning("NOWPAYMENTS_API_KEY is NOT set. Invoices will be simulated.")
+    logger.info("Starting %s ...", APP_NAME)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
