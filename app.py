@@ -10,7 +10,7 @@ import hashlib
 from flask import Flask, request, jsonify
 
 # SQLAlchemy
-from sqlalchemy import create_engine, Column, String, BigInteger, Float, Integer, Text, JSON as SA_JSON
+from sqlalchemy import create_engine, Column, String, BigInteger, Float, JSON as SA_JSON
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -70,9 +70,8 @@ logger = logging.getLogger("mythic-bot")
 app = Flask(__name__)
 
 # ---------- Database (SQLAlchemy) ----------
-DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("Postgres.DATABASE_URL") or os.getenv("Postgres.DATABASE")  # fallback try
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("Postgres.DATABASE_URL") or os.getenv("Postgres.DATABASE")
 if not DATABASE_URL:
-    # fallback to local sqlite for development
     DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "sqlite:///local.db")
     logger.warning("DATABASE_URL is not set. Falling back to local sqlite (development only).")
 
@@ -83,7 +82,6 @@ Base = declarative_base()
 
 class Order(Base):
     __tablename__ = "orders"
-    # keep order_id as string to match previous format ORD{ms}
     order_id = Column(String, primary_key=True, index=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     product_id = Column(String, nullable=False)
@@ -113,12 +111,14 @@ def telegram_request(method, payload):
         return r.json()
     except Exception as e:
         logger.exception("Telegram request failed: %s", e)
+        return None
 
 
 def send_message(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
-        payload["reply_markup"] = reply_markup
+        # Telegram expects reply_markup as a JSON-encoded string
+        payload["reply_markup"] = json.dumps(reply_markup)
     return telegram_request("sendMessage", payload)
 
 
@@ -128,15 +128,17 @@ def send_photo(chat_id, photo, caption=None, reply_markup=None):
         payload["caption"] = caption
         payload["parse_mode"] = "HTML"
     if reply_markup:
-        payload["reply_markup"] = reply_markup
+        payload["reply_markup"] = json.dumps(reply_markup)
     return telegram_request("sendPhoto", payload)
 
 
-def send_document(chat_id, doc_url, caption=None):
+def send_document(chat_id, doc_url, caption=None, reply_markup=None):
     payload = {"chat_id": chat_id, "document": doc_url}
     if caption:
         payload["caption"] = caption
         payload["parse_mode"] = "HTML"
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
     return telegram_request("sendDocument", payload)
 
 
@@ -218,7 +220,6 @@ def create_order_db(user_id, pack_id):
         )
         session.add(o)
         session.commit()
-        # refresh to ensure persisted
         session.refresh(o)
         return {
             "order_id": o.order_id,
@@ -406,10 +407,10 @@ def handle_update(update):
             answer_callback(cq_id)
 
             if data == "images":
-                send_message(chat_id, "🖼 Image Packs:", packs_keyboard("image"))
+                send_message(chat_id, "🖼 Image Packs:", reply_markup=packs_keyboard("image"))
                 return
             if data == "videos":
-                send_message(chat_id, "🎥 Video Packs:", packs_keyboard("video"))
+                send_message(chat_id, "🎥 Video Packs:", reply_markup=packs_keyboard("video"))
                 return
             if data == "demo":
                 send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Free demo image")
@@ -418,14 +419,15 @@ def handle_update(update):
                 send_message(chat_id, "🤖 Mythic AI Store\nAI-generated image & video packs.")
                 return
             if data == "back":
-                send_message(chat_id, "Main menu:", main_menu())
+                send_message(chat_id, "Main menu:", reply_markup=main_menu())
                 return
 
             if data.startswith("pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
                 if p:
-                    send_photo(chat_id, p["demo_url"], f"<b>{p['title']}</b>\n{p['description']}", pack_actions(pid))
+                    # show demo image + actions
+                    send_photo(chat_id, p["demo_url"], f"<b>{p['title']}</b>\n{p['description']}", reply_markup=pack_actions(pid))
                 return
 
             if data.startswith("demo_pack:"):
@@ -450,7 +452,6 @@ def handle_update(update):
                 oid = data.split(":", 1)[1]
                 o = get_order_db(oid)
                 if o and o["user_id"] == chat_id:
-                    # simple cancel: only update status if pending
                     session = SessionLocal()
                     try:
                         dbo = session.query(Order).filter_by(order_id=oid).first()
@@ -523,18 +524,12 @@ def health():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = request.get_json(force=True)
-    # handle in background thread to quickly respond to Telegram
     threading.Thread(target=handle_update, args=(update,)).start()
     return "ok", 200
 
 
 @app.route("/nowpayments_webhook", methods=["POST"])
 def nowpayments_webhook():
-    """
-    NowPayments IPN webhook handler with HMAC verification.
-    Make sure your NowPayments dashboard ipn_callback_url is set to:
-      PUBLIC_URL + "/nowpayments_webhook"
-    """
     try:
         data = request.get_json(force=True)
     except Exception:
@@ -543,7 +538,6 @@ def nowpayments_webhook():
 
     logger.info("NowPayments webhook received: %s", data)
 
-    # verify signature if secret is set
     received_sig = request.headers.get("x-nowpayments-sig")
     if NOWPAYMENTS_IPN_SECRET and received_sig:
         sorted_json = json.dumps(data, separators=(',', ':'), sort_keys=True)
@@ -560,7 +554,6 @@ def nowpayments_webhook():
         return jsonify({"ok": False, "reason": "no_order_id"}), 400
 
     if str(status).lower() in ("finished", "paid", "success", "confirmed"):
-        # optional: validate amount
         o = get_order_db(order_id)
         if o:
             pay_amount = data.get("price_amount") or data.get("pay_amount") or (data.get("invoice") or {}).get("price_amount")
@@ -572,12 +565,10 @@ def nowpayments_webhook():
         mark_order_paid_db(order_id, tx_info=data)
         return jsonify({"ok": True}), 200
     else:
-        # update invoice status in order record
         update_order_invoice_db(order_id, {"status": status})
         return jsonify({"ok": True, "status": status}), 200
 
 
-# Simple fake pay page (optional convenience for local testing)
 @app.route("/pay/<order_id>")
 def pay_page(order_id):
     o = get_order_db(order_id)
