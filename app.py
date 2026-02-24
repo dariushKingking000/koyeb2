@@ -12,7 +12,6 @@ from flask import Flask, request, jsonify
 # SQLAlchemy
 from sqlalchemy import create_engine, Column, String, BigInteger, Float, JSON as SA_JSON
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.exc import SQLAlchemyError
 
 # ---------- Configuration (from ENV) ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # set in Railway / service variables
@@ -24,43 +23,75 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "https://example.com")
 
 APP_NAME = "Mythic AI Store"
 
+# fallback defaults (used only if you don't provide a demo link)
 DEFAULT_DEMO_IMAGE = "https://via.placeholder.com/1024x768.png?text=Demo+Image"
 DEFAULT_DEMO_VIDEO = "https://via.placeholder.com/1280x720.png?text=Demo+Video"
 
-# Prices (in USDT)
+# ---------- Prices + Catalog (use direct-download links) ----------
 PRICES = {
-    "img_001": 5.0,
-    "img_002": 4.0,
-    "vid_001": 10.0,
+    "face_pack": 10.0,
+    "love_pack": 10.0,
+    "planets_pack": 10.0,
+    "video1": 5.0,
+    "video2": 5.0,
+    "video3": 5.0,
 }
 
-# Catalog (deliver_url should be direct-download links)
 PACKS = {
-    # demo_url and deliver_url set to your provided Drive direct-download link
-    "img_001": {
-        "id": "img_001",
-        "title": "Anime Pack (10 images)",
-        "description": "High-quality AI-generated anime images.",
+
+    "face_pack": {
+        "id": "face_pack",
+        "title": "Face Pack",
+        "description": "AI Faces Collection",
         "type": "image",
         "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
-        "deliver_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
+        "deliver_url": "https://drive.google.com/uc?export=download&id=1FY77eK4EIWMYP3UT37dP_q1Jt9smdPqx",
     },
-    "img_002": {
-        "id": "img_002",
-        "title": "Realistic Pack (8 images)",
-        "description": "Photorealistic AI images.",
+
+    "love_pack": {
+        "id": "love_pack",
+        "title": "Love Pack",
+        "description": "Romantic AI Images",
         "type": "image",
-        "demo_url": DEFAULT_DEMO_IMAGE,
-        "deliver_url": "https://drive.google.com/uc?export=download&id=REPLACE_WITH_YOUR_ID",
+        "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
+        "deliver_url": "https://drive.google.com/uc?export=download&id=1vtYcZmq5QHAJSlCnUutneAllL75Kxfbw",
     },
-    "vid_001": {
-        "id": "vid_001",
-        "title": "Cinematic Video Pack",
-        "description": "Short cinematic AI video.",
+
+    "planets_pack": {
+        "id": "planets_pack",
+        "title": "Planets Pack",
+        "description": "AI Generated Planets",
+        "type": "image",
+        "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
+        "deliver_url": "https://drive.google.com/uc?export=download&id=108HXs4tBjXRRm5z2To6VQthW6HtLIeyO",
+    },
+
+    "video1": {
+        "id": "video1",
+        "title": "Love Video",
+        "description": "Romantic cinematic AI video",
         "type": "video",
-        "demo_url": DEFAULT_DEMO_VIDEO,
-        "deliver_url": "https://drive.google.com/uc?export=download&id=REPLACE_WITH_YOUR_ID",
-    }
+        "demo_url": "https://drive.google.com/uc?export=download&id=1ZrAjxl-iwc_0sKUi1UHqu_NPSY3Xts5B",
+        "deliver_url": "https://drive.google.com/uc?export=download&id=1Yc3mFUTAJ0Dnch5ZQxHLgK8Rza1zowlc",
+    },
+
+    "video2": {
+        "id": "video2",
+        "title": "Alone Human Video",
+        "description": "Emotional AI cinematic scene",
+        "type": "video",
+        "demo_url": "https://drive.google.com/uc?export=download&id=1ZrAjxl-iwc_0sKUi1UHqu_NPSY3Xts5B",
+        "deliver_url": "https://drive.google.com/uc?export=download&id=1cbXn5BvCe-pCwWNCYv0xWVv6ndnGUcr3",
+    },
+
+    "video3": {
+        "id": "video3",
+        "title": "Planet Video",
+        "description": "Epic AI space cinematic video",
+        "type": "video",
+        "demo_url": "https://drive.google.com/uc?export=download&id=1ZrAjxl-iwc_0sKUi1UHqu_NPSY3Xts5B",
+        "deliver_url": "https://drive.google.com/uc?export=download&id=1OmvHHlB-eYsIYV9XEES15B6fScMyEe3d",
+    },
 }
 
 # ---------- Logging ----------
@@ -106,9 +137,8 @@ def telegram_request(method, payload):
         return None
     url = f"{API_URL}/{method}"
     try:
-        r = requests.post(url, json=payload, timeout=15)
+        r = requests.post(url, json=payload, timeout=20)
         if r.status_code != 200:
-            # log body for debugging
             logger.warning("Telegram API returned %s: %s", r.status_code, r.text)
         try:
             return r.json()
@@ -126,8 +156,8 @@ def send_message(chat_id, text, reply_markup=None):
     return telegram_request("sendMessage", payload)
 
 
-def send_photo(chat_id, photo, caption=None, reply_markup=None):
-    payload = {"chat_id": chat_id, "photo": photo}
+def send_photo(chat_id, photo_url, caption=None, reply_markup=None):
+    payload = {"chat_id": chat_id, "photo": photo_url}
     if caption:
         payload["caption"] = caption
         payload["parse_mode"] = "HTML"
@@ -135,11 +165,25 @@ def send_photo(chat_id, photo, caption=None, reply_markup=None):
         payload["reply_markup"] = json.dumps(reply_markup)
 
     resp = telegram_request("sendPhoto", payload)
-    # Fallback: some hosts (like drive preview pages) return wrong content-type -> Telegram rejects
     if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
         logger.warning("sendPhoto failed with 'wrong type'; falling back to send_message with link")
-        # include caption + link
-        text = (caption or "") + "\n\n" + photo
+        text = (caption or "") + "\n\n" + photo_url
+        return send_message(chat_id, text, reply_markup=reply_markup)
+    return resp
+
+
+def send_video(chat_id, video_url, caption=None, reply_markup=None):
+    payload = {"chat_id": chat_id, "video": video_url}
+    if caption:
+        payload["caption"] = caption
+        payload["parse_mode"] = "HTML"
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+
+    resp = telegram_request("sendVideo", payload)
+    if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
+        logger.warning("sendVideo failed with 'wrong type'; falling back to send_message with link")
+        text = (caption or "") + "\n\n" + video_url
         return send_message(chat_id, text, reply_markup=reply_markup)
     return resp
 
@@ -331,8 +375,8 @@ def mark_order_paid_db(order_id, tx_info=None):
             chat_id = o.user_id
             product = PACKS.get(o.product_id)
             if product:
-                send_message(chat_id, f"✅ Payment confirmed for <b>{product['title']}</b>\nPreparing your download...")
-                send_document(chat_id, product.get("deliver_url"), caption="Here is your pack. Thank you!")
+                # try send_document (zip) and fallback to sending link
+                send_document(chat_id, product.get("deliver_url"), caption=f"Here is your pack: {product.get('title')}")
             else:
                 send_message(chat_id, "✅ Payment confirmed. Your file is ready.")
         except Exception:
@@ -431,6 +475,7 @@ def handle_update(update):
                 send_message(chat_id, "🎥 Video Packs:", reply_markup=packs_keyboard("video"))
                 return
             if data == "demo":
+                # show a general demo image (fallback)
                 send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Free demo image")
                 return
             if data == "about":
@@ -444,15 +489,21 @@ def handle_update(update):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
                 if p:
-                    # show demo image + actions
-                    send_photo(chat_id, p["demo_url"], f"<b>{p['title']}</b>\n{p['description']}", reply_markup=pack_actions(pid))
+                    caption = f"<b>{p['title']}</b>\n{p['description']}"
+                    if p.get("type") == "video":
+                        send_video(chat_id, p.get("demo_url") or DEFAULT_DEMO_VIDEO, caption, reply_markup=pack_actions(pid))
+                    else:
+                        send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, caption, reply_markup=pack_actions(pid))
                 return
 
             if data.startswith("demo_pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
                 if p:
-                    send_photo(chat_id, p["demo_url"], "📤 Demo preview")
+                    if p.get("type") == "video":
+                        send_video(chat_id, p.get("demo_url") or DEFAULT_DEMO_VIDEO, "📤 Demo preview")
+                    else:
+                        send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, "📤 Demo preview")
                 return
 
             # BUY flow
@@ -587,6 +638,7 @@ def nowpayments_webhook():
         return jsonify({"ok": True, "status": status}), 200
 
 
+# Simple fake pay page (optional convenience for local testing)
 @app.route("/pay/<order_id>")
 def pay_page(order_id):
     o = get_order_db(order_id)
