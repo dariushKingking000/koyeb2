@@ -36,12 +36,13 @@ PRICES = {
 
 # Catalog (deliver_url should be direct-download links)
 PACKS = {
+    # demo_url and deliver_url set to your provided Drive direct-download link
     "img_001": {
         "id": "img_001",
         "title": "Anime Pack (10 images)",
         "description": "High-quality AI-generated anime images.",
         "type": "image",
-        "demo_url": DEFAULT_DEMO_IMAGE,
+        "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
         "deliver_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
     },
     "img_002": {
@@ -102,13 +103,17 @@ Base.metadata.create_all(bind=engine)
 def telegram_request(method, payload):
     if not API_URL:
         logger.error("BOT_TOKEN is not set")
-        return
+        return None
     url = f"{API_URL}/{method}"
     try:
         r = requests.post(url, json=payload, timeout=15)
         if r.status_code != 200:
+            # log body for debugging
             logger.warning("Telegram API returned %s: %s", r.status_code, r.text)
-        return r.json()
+        try:
+            return r.json()
+        except Exception:
+            return {"ok": False, "error": "invalid_json_response", "status_code": r.status_code, "text": r.text}
     except Exception as e:
         logger.exception("Telegram request failed: %s", e)
         return None
@@ -117,7 +122,6 @@ def telegram_request(method, payload):
 def send_message(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
-        # Telegram expects reply_markup as a JSON-encoded string
         payload["reply_markup"] = json.dumps(reply_markup)
     return telegram_request("sendMessage", payload)
 
@@ -129,7 +133,15 @@ def send_photo(chat_id, photo, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    return telegram_request("sendPhoto", payload)
+
+    resp = telegram_request("sendPhoto", payload)
+    # Fallback: some hosts (like drive preview pages) return wrong content-type -> Telegram rejects
+    if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
+        logger.warning("sendPhoto failed with 'wrong type'; falling back to send_message with link")
+        # include caption + link
+        text = (caption or "") + "\n\n" + photo
+        return send_message(chat_id, text, reply_markup=reply_markup)
+    return resp
 
 
 def send_document(chat_id, doc_url, caption=None, reply_markup=None):
@@ -139,7 +151,13 @@ def send_document(chat_id, doc_url, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    return telegram_request("sendDocument", payload)
+
+    resp = telegram_request("sendDocument", payload)
+    if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
+        logger.warning("sendDocument failed with 'wrong type'; falling back to send_message with link")
+        text = (caption or "") + "\n\n" + doc_url
+        return send_message(chat_id, text, reply_markup=reply_markup)
+    return resp
 
 
 def answer_callback(cq_id):
