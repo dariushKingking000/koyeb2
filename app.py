@@ -27,6 +27,12 @@ APP_NAME = "Mythic AI Store"
 DEFAULT_DEMO_IMAGE = "https://via.placeholder.com/1024x768.png?text=Demo+Image"
 DEFAULT_DEMO_VIDEO = "https://via.placeholder.com/1280x720.png?text=Demo+Video"
 
+# ---------- Allowed currencies (the 20 the user chose) ----------
+CURRENCIES = [
+    "BTC", "ETH", "USDT", "USDC", "SOL", "ADA", "DOT", "XRP", "DOGE", "LTC",
+    "BCH", "TRX", "MATIC", "UNI", "LINK", "BUSD", "DAI", "HBAR", "AVAX", "SHIB"
+]
+
 # ---------- Prices + Catalog (use direct-download links) ----------
 PRICES = {
     "face_pack": 10.0,
@@ -38,7 +44,6 @@ PRICES = {
 }
 
 PACKS = {
-
     "face_pack": {
         "id": "face_pack",
         "title": "Face Pack",
@@ -47,7 +52,6 @@ PACKS = {
         "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
         "deliver_url": "https://drive.google.com/uc?export=download&id=1FY77eK4EIWMYP3UT37dP_q1Jt9smdPqx",
     },
-
     "love_pack": {
         "id": "love_pack",
         "title": "Love Pack",
@@ -56,7 +60,6 @@ PACKS = {
         "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
         "deliver_url": "https://drive.google.com/uc?export=download&id=1vtYcZmq5QHAJSlCnUutneAllL75Kxfbw",
     },
-
     "planets_pack": {
         "id": "planets_pack",
         "title": "Planets Pack",
@@ -65,7 +68,6 @@ PACKS = {
         "demo_url": "https://drive.google.com/uc?export=download&id=1BLOOQgUDGlsrz_gNS0z9aCcHdtD1L_-0",
         "deliver_url": "https://drive.google.com/uc?export=download&id=108HXs4tBjXRRm5z2To6VQthW6HtLIeyO",
     },
-
     "video1": {
         "id": "video1",
         "title": "Love Video",
@@ -74,7 +76,6 @@ PACKS = {
         "demo_url": "https://drive.google.com/uc?export=download&id=1ZrAjxl-iwc_0sKUi1UHqu_NPSY3Xts5B",
         "deliver_url": "https://drive.google.com/uc?export=download&id=1Yc3mFUTAJ0Dnch5ZQxHLgK8Rza1zowlc",
     },
-
     "video2": {
         "id": "video2",
         "title": "Alone Human Video",
@@ -83,7 +84,6 @@ PACKS = {
         "demo_url": "https://drive.google.com/uc?export=download&id=1ZrAjxl-iwc_0sKUi1UHqu_NPSY3Xts5B",
         "deliver_url": "https://drive.google.com/uc?export=download&id=1cbXn5BvCe-pCwWNCYv0xWVv6ndnGUcr3",
     },
-
     "video3": {
         "id": "video3",
         "title": "Planet Video",
@@ -243,6 +243,7 @@ def payment_select_kb(order_id):
     return {
         "inline_keyboard": [
             [{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{order_id}"}],
+            [{"text": "💳 Pay by Card (coming soon)", "callback_data": f"pay_card:{order_id}"}],
             [{"text": "❌ Cancel", "callback_data": f"cancel:{order_id}"}],
         ]
     }
@@ -255,6 +256,21 @@ def invoice_kb(order_id):
             [{"text": "🔁 Retry / New Invoice", "callback_data": f"retry:{order_id}"}],
         ]
     }
+
+
+def currency_keyboard(order_id):
+    # build rows of 4 currencies per row
+    kb = []
+    row = []
+    for i, cur in enumerate(CURRENCIES, start=1):
+        row.append({"text": cur, "callback_data": f"pay_currency:{order_id}:{cur}"})
+        if i % 4 == 0:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append([{"text": "🔙 Cancel", "callback_data": f"cancel:{order_id}"}])
+    return {"inline_keyboard": kb}
 
 
 # ---------- Utilities (DB) ----------
@@ -273,7 +289,7 @@ def create_order_db(user_id, pack_id):
             user_id=int(user_id),
             product_id=pack_id,
             price=price,
-            currency="USDT",
+            currency="USDT",  # default, user will choose later
             status="pending",
             invoice=None,
             created_at=created_at,
@@ -297,6 +313,23 @@ def create_order_db(user_id, pack_id):
         session.rollback()
         logger.exception("Failed to create order in DB: %s", e)
         raise
+    finally:
+        session.close()
+
+
+def update_order_currency_db(order_id, currency):
+    session = SessionLocal()
+    try:
+        dbo = session.query(Order).filter_by(order_id=order_id).first()
+        if not dbo:
+            return False
+        dbo.currency = currency
+        session.commit()
+        return True
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to update order currency")
+        return False
     finally:
         session.close()
 
@@ -393,7 +426,8 @@ def mark_order_paid_db(order_id, tx_info=None):
 # ---------- NowPayments integration ----------
 def create_invoice_nowpayments_db(order):
     """
-    Create invoice via NowPayments. If API key missing, create fake invoice.
+    Create invoice via NowPayments. Uses order['currency'] as price_currency.
+    If API key missing, create fake invoice.
     """
     if not NOWPAYMENTS_API_KEY:
         fake = {
@@ -513,7 +547,9 @@ def handle_update(update):
                     send_message(chat_id, "Product not found.")
                     return
                 order = create_order_db(chat_id, pid)
-                send_message(chat_id, f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\nChoose payment method:", reply_markup=payment_select_kb(order["order_id"]))
+                send_message(chat_id,
+                             f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\n\nChoose payment method:",
+                             reply_markup=payment_select_kb(order["order_id"]))
                 return
 
             # cancel
@@ -536,16 +572,43 @@ def handle_update(update):
                     send_message(chat_id, "Order not found or not yours.")
                 return
 
-            # pay now -> create invoice (NowPayments or fake)
+            # pay now -> first ask currency selection (instead of creating invoice immediately)
             if data.startswith("pay_now:"):
                 oid = data.split(":", 1)[1]
-                order = get_order_db(oid)
-                if not order:
+                o = get_order_db(oid)
+                if not o:
                     send_message(chat_id, "Order not found.")
                     return
+                send_message(chat_id, "لطفا ارز پرداخت را انتخاب کنید:", reply_markup=currency_keyboard(oid))
+                return
+
+            # user selected a currency -> create invoice with that currency
+            if data.startswith("pay_currency:"):
+                # format: pay_currency:ORDERID:CUR
+                parts = data.split(":")
+                if len(parts) < 3:
+                    send_message(chat_id, "Invalid selection.")
+                    return
+                oid = parts[1]
+                cur = parts[2]
+                if cur not in CURRENCIES:
+                    send_message(chat_id, "Invalid currency.")
+                    return
+                # update order currency
+                ok = update_order_currency_db(oid, cur)
+                if not ok:
+                    send_message(chat_id, "Failed to update order. Try again.")
+                    return
+                order = get_order_db(oid)
                 invoice = create_invoice_nowpayments_db(order)
                 pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
-                send_message(chat_id, f"Invoice created.\nPay here: {pay_url}\nAfter payment press <b>I Paid (check)</b>.", reply_markup=invoice_kb(oid))
+                send_message(chat_id, f"Invoice created.\nPay here: {pay_url}\n\nپس از پرداخت روی <b>I Paid (check)</b> بزنید تا وضعیت بررسی شود.", reply_markup=invoice_kb(oid))
+                return
+
+            # placeholder for card payments (coming soon)
+            if data.startswith("pay_card:"):
+                oid = data.split(":", 1)[1]
+                send_message(chat_id, "💳 پرداخت کارت فعلاً در دست ساخت است. به زودی اضافه می‌شود.")
                 return
 
             # check paid (manual check)
@@ -560,10 +623,10 @@ def handle_update(update):
                     mark_order_paid_db(oid, tx_info=invoice)
                     send_message(chat_id, f"Order {oid} is already paid and delivered.")
                 else:
-                    send_message(chat_id, "Payment not detected yet. If you really paid, wait a minute or try again.")
+                    send_message(chat_id, "Payment not detected yet. If you really paid, صبر کن یا دوباره امتحان کن.")
                 return
 
-            # retry -> generate new invoice
+            # retry -> generate new invoice (keeps current order.currency)
             if data.startswith("retry:"):
                 oid = data.split(":", 1)[1]
                 order = get_order_db(oid)
