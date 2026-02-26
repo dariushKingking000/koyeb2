@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Telegram + NowPayments Flask app (final cleaned version).
+Clean final: Telegram + NowPayments Flask app.
 
 Behavior:
-- When user taps a pack: show title/description + actions only (do NOT auto-send demo).
+- When user taps a pack: show title/description + actions only (no demo auto-send).
 - Demo preview is sent only when user taps "Demo Preview".
 - "Pay by Card" option removed.
-- "Pay with NOWPayments" immediately creates an invoice and returns the invoice URL (no currency selection).
+- "Pay with Crypto" immediately creates an invoice and returns the invoice URL (no currency selection).
 - All user-facing text is English.
 """
 
@@ -166,6 +166,7 @@ def send_photo(chat_id, photo_url, caption=None, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     resp = telegram_request("sendPhoto", payload)
+    # Telegram sometimes rejects large URL as photo -> fallback to send link text
     if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
         text = (caption or "") + "\n\n" + photo_url
         return send_message(chat_id, text, reply_markup=reply_markup)
@@ -226,11 +227,21 @@ def packs_keyboard(p_type):
 
 
 def pack_actions(pack_id):
+    # Show Demo Preview and Buy (buy will create DB order)
     return {
         "inline_keyboard": [
             [{"text": "📤 Demo Preview", "callback_data": f"demo_pack:{pack_id}"}],
-            [{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{pack_id}"}],
-            [{"text": "❌ Cancel", "callback_data": f"cancel:{pack_id}"}],
+            [{"text": "💳 Buy", "callback_data": f"buy:{pack_id}"}],
+            [{"text": "🔙 Back", "callback_data": "back"}],
+        ]
+    }
+
+
+def payment_select_kb(order_id):
+    return {
+        "inline_keyboard": [
+            [{"text": "💰 Pay with Crypto", "callback_data": f"pay_now:{order_id}"}],
+            [{"text": "❌ Cancel", "callback_data": f"cancel:{order_id}"}],
         ]
     }
 
@@ -280,10 +291,10 @@ def create_order_db(user_id, pack_id):
             "created_at": o.created_at,
             "invoice": o.invoice,
         }
-    except Exception as e:
+    except Exception:
         session.rollback()
-        logger.exception("Failed to create order in DB: %s", e)
-        raise
+        logger.exception("Failed to create order in DB")
+        return None
     finally:
         session.close()
 
@@ -472,7 +483,7 @@ def handle_update(update):
                 send_message(chat_id, "Main menu:", reply_markup=main_menu())
                 return
 
-            # pack -> show title/description + actions only
+            # pack -> show title/description + actions only (no demo auto-send)
             if data.startswith("pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
@@ -492,17 +503,21 @@ def handle_update(update):
                         send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, "📤 Demo preview")
                 return
 
-            # BUY flow -> create DB order & show payment options (NOWPayments only)
+            # BUY flow -> create DB order & show payment options
             if data.startswith("buy:"):
                 pid = data.split(":", 1)[1]
                 if pid not in PACKS:
                     send_message(chat_id, "Product not found.")
                     return
                 order = create_order_db(chat_id, pid)
+                if not order:
+                    send_message(chat_id, "Failed to create order. Please try again.")
+                    return
+                # show order + "Pay with Crypto" button (uses order_id)
                 send_message(
                     chat_id,
                     f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\n\nChoose payment method:",
-                    reply_markup={"inline_keyboard": [[{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{order['order_id']}"}, {"text": "❌ Cancel", "callback_data": f"cancel:{order['order_id']}"}]]}
+                    reply_markup=payment_select_kb(order["order_id"])
                 )
                 return
 
@@ -535,9 +550,10 @@ def handle_update(update):
                     return
                 invoice = create_invoice_nowpayments_db(order)
                 pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
+                # EXACT text requested by user (English)
                 send_message(
                     chat_id,
-                    f"Invoice created.\n\nPay here: {pay_url}\n\nAfter payment press <b>I Paid (check)</b>.",
+                    f"Invoice created.\nPay here: {pay_url}\n\nAfter payment press <b>I Paid (check)</b>.",
                     reply_markup=invoice_kb(oid)
                 )
                 return
@@ -587,6 +603,7 @@ def health():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = request.get_json(force=True)
+    # handle update in background thread to quickly return 200 to Telegram
     threading.Thread(target=handle_update, args=(update,)).start()
     return "ok", 200
 
