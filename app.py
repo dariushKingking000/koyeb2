@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Clean final: Telegram + NowPayments Flask app.
+Telegram + NowPayments Flask app - cleaned & fixed.
 
-Behavior:
-- When user taps a pack: show title/description + actions only (no demo auto-send).
-- Demo preview is sent only when user taps "Demo Preview".
-- "Pay by Card" option removed.
-- "Pay with Crypto" immediately creates an invoice and returns the invoice URL (no currency selection).
+Fixes included:
+- "Demo" menu will send a real demo media (image/video) fetched from PACKS.
+- Demo preview sent only when user taps "Demo Preview" on a pack.
+- "Pay by Card" removed.
+- "Pay with Crypto" (label) immediately creates an invoice and returns invoice URL (no currency selection).
+- Avoid "Order not found" caused by wrong callback payloads.
+- Handles Telegram "wrong type of the web page content" by falling back to downloading the image and uploading it to Telegram where possible.
 - All user-facing text is English.
 """
 
@@ -18,12 +20,13 @@ import threading
 import requests
 import hmac
 import hashlib
+from io import BytesIO
 from flask import Flask, request, jsonify
 
 from sqlalchemy import create_engine, Column, String, BigInteger, Float, JSON as SA_JSON
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ---------------- Configuration (from ENV) ----------------
+# ---------------- Configuration ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else None
 
@@ -36,7 +39,6 @@ APP_NAME = "Mythic AI Store"
 DEFAULT_DEMO_IMAGE = "https://via.placeholder.com/1024x768.png?text=Demo+Image"
 DEFAULT_DEMO_VIDEO = "https://via.placeholder.com/1280x720.png?text=Demo+Video"
 
-# Prices + Catalog
 PRICES = {
     "face_pack": 10.0,
     "love_pack": 10.0,
@@ -133,13 +135,14 @@ class Order(Base):
 Base.metadata.create_all(bind=engine)
 
 # ---------------- Telegram helpers ----------------
-def telegram_request(method: str, payload: dict):
+def telegram_request_json(method: str, payload: dict, timeout=20):
+    """Send JSON request to Telegram Bot API."""
     if not API_URL:
         logger.error("BOT_TOKEN is not set")
         return None
     url = f"{API_URL}/{method}"
     try:
-        r = requests.post(url, json=payload, timeout=20)
+        r = requests.post(url, json=payload, timeout=timeout)
         if r.status_code != 200:
             logger.warning("Telegram API returned %s: %s", r.status_code, r.text)
         try:
@@ -151,39 +154,108 @@ def telegram_request(method: str, payload: dict):
         return None
 
 
+def telegram_request_multipart(method: str, data: dict, files: dict, timeout=60):
+    """Send multipart/form-data request to Telegram (for uploading files)."""
+    if not API_URL:
+        logger.error("BOT_TOKEN is not set")
+        return None
+    url = f"{API_URL}/{method}"
+    try:
+        r = requests.post(url, data=data, files=files, timeout=timeout)
+        if r.status_code != 200:
+            logger.warning("Telegram multipart API returned %s: %s", r.status_code, r.text)
+        try:
+            return r.json()
+        except Exception:
+            return {"ok": False, "error": "invalid_json_response", "status_code": r.status_code, "text": r.text}
+    except Exception as e:
+        logger.exception("Telegram multipart request failed: %s", e)
+        return None
+
+
 def send_message(chat_id, text, reply_markup=None):
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    return telegram_request("sendMessage", payload)
+    return telegram_request_json("sendMessage", payload)
 
 
 def send_photo(chat_id, photo_url, caption=None, reply_markup=None):
+    """
+    Try to send photo by URL first. If Telegram returns `wrong type of the web page content`,
+    attempt to download the image and upload it to Telegram (multipart).
+    """
     payload = {"chat_id": chat_id, "photo": photo_url}
     if caption:
         payload["caption"] = caption
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    resp = telegram_request("sendPhoto", payload)
-    # Telegram sometimes rejects large URL as photo -> fallback to send link text
-    if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
-        text = (caption or "") + "\n\n" + photo_url
-        return send_message(chat_id, text, reply_markup=reply_markup)
+
+    resp = telegram_request_json("sendPhoto", payload)
+    if resp and not resp.get("ok"):
+        desc = (resp.get("description") or "").lower()
+        if "wrong type of the web page content" in desc or "web page" in desc:
+            # try to download and upload
+            try:
+                r = requests.get(photo_url, timeout=20, stream=True)
+                r.raise_for_status()
+                content = r.content
+                ctype = r.headers.get("Content-Type", "") or "image/jpeg"
+                # send as multipart
+                files = {"photo": ("demo.jpg", BytesIO(content), ctype)}
+                data = {"chat_id": str(chat_id)}
+                if caption:
+                    data["caption"] = caption
+                    data["parse_mode"] = "HTML"
+                multi = telegram_request_multipart("sendPhoto", data, files)
+                return multi
+            except Exception:
+                logger.exception("Failed to download/upload photo fallback")
+                # send link message as last resort
+                text = (caption or "") + "\n\n" + photo_url
+                return send_message(chat_id, text, reply_markup=reply_markup)
     return resp
 
 
 def send_video(chat_id, video_url, caption=None, reply_markup=None):
+    """
+    For video: try send by URL; if Telegram rejects and the file is reasonably small (<50MB),
+    attempt to download and upload. Otherwise fallback to sendMessage with the URL.
+    """
     payload = {"chat_id": chat_id, "video": video_url}
     if caption:
         payload["caption"] = caption
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    resp = telegram_request("sendVideo", payload)
-    if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
-        text = (caption or "") + "\n\n" + video_url
-        return send_message(chat_id, text, reply_markup=reply_markup)
+
+    resp = telegram_request_json("sendVideo", payload)
+    if resp and not resp.get("ok"):
+        desc = (resp.get("description") or "").lower()
+        if "wrong type of the web page content" in desc or "web page" in desc:
+            try:
+                r = requests.get(video_url, timeout=30, stream=True)
+                r.raise_for_status()
+                content_length = int(r.headers.get("Content-Length") or 0)
+                max_size = 50 * 1024 * 1024  # 50 MB
+                if content_length and content_length > max_size:
+                    # too big to upload; fallback to link
+                    text = (caption or "") + "\n\n" + video_url
+                    return send_message(chat_id, text, reply_markup=reply_markup)
+                content = r.content
+                ctype = r.headers.get("Content-Type", "") or "video/mp4"
+                files = {"video": ("demo.mp4", BytesIO(content), ctype)}
+                data = {"chat_id": str(chat_id)}
+                if caption:
+                    data["caption"] = caption
+                    data["parse_mode"] = "HTML"
+                multi = telegram_request_multipart("sendVideo", data, files)
+                return multi
+            except Exception:
+                logger.exception("Failed to download/upload video fallback")
+                text = (caption or "") + "\n\n" + video_url
+                return send_message(chat_id, text, reply_markup=reply_markup)
     return resp
 
 
@@ -194,15 +266,36 @@ def send_document(chat_id, doc_url, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-    resp = telegram_request("sendDocument", payload)
-    if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
-        text = (caption or "") + "\n\n" + doc_url
-        return send_message(chat_id, text, reply_markup=reply_markup)
+
+    resp = telegram_request_json("sendDocument", payload)
+    if resp and not resp.get("ok"):
+        desc = (resp.get("description") or "").lower()
+        if "wrong type of the web page content" in desc:
+            # try to download and upload as document (if size reasonable)
+            try:
+                r = requests.get(doc_url, timeout=30, stream=True)
+                r.raise_for_status()
+                content_length = int(r.headers.get("Content-Length") or 0)
+                max_size = 50 * 1024 * 1024
+                if content_length and content_length > max_size:
+                    return send_message(chat_id, (caption or "") + "\n\n" + doc_url)
+                content = r.content
+                ctype = r.headers.get("Content-Type", "") or "application/octet-stream"
+                files = {"document": ("file", BytesIO(content), ctype)}
+                data = {"chat_id": str(chat_id)}
+                if caption:
+                    data["caption"] = caption
+                    data["parse_mode"] = "HTML"
+                multi = telegram_request_multipart("sendDocument", data, files)
+                return multi
+            except Exception:
+                logger.exception("Failed to download/upload document fallback")
+                return send_message(chat_id, (caption or "") + "\n\n" + doc_url)
     return resp
 
 
 def answer_callback(cq_id):
-    telegram_request("answerCallbackQuery", {"callback_query_id": cq_id})
+    telegram_request_json("answerCallbackQuery", {"callback_query_id": cq_id})
 
 
 # ---------------- Keyboards ----------------
@@ -227,7 +320,7 @@ def packs_keyboard(p_type):
 
 
 def pack_actions(pack_id):
-    # Show Demo Preview and Buy (buy will create DB order)
+    # Only Demo Preview / Buy / Back here. Buy -> create order.
     return {
         "inline_keyboard": [
             [{"text": "📤 Demo Preview", "callback_data": f"demo_pack:{pack_id}"}],
@@ -237,7 +330,8 @@ def pack_actions(pack_id):
     }
 
 
-def payment_select_kb(order_id):
+def payment_select_for_order(order_id):
+    # Shows Pay with Crypto and Cancel for a created order
     return {
         "inline_keyboard": [
             [{"text": "💰 Pay with Crypto", "callback_data": f"pay_now:{order_id}"}],
@@ -271,7 +365,7 @@ def create_order_db(user_id, pack_id):
             user_id=int(user_id),
             product_id=pack_id,
             price=price,
-            currency="USDT",  # default currency used when creating invoice
+            currency="USDT",  # default currency on invoice (can be changed later if you extend)
             status="pending",
             invoice=None,
             created_at=created_at,
@@ -294,7 +388,7 @@ def create_order_db(user_id, pack_id):
     except Exception:
         session.rollback()
         logger.exception("Failed to create order in DB")
-        return None
+        raise
     finally:
         session.close()
 
@@ -368,7 +462,7 @@ def mark_order_paid_db(order_id, tx_info=None):
         o.paid_at = int(time.time())
         o.tx_info = tx_info
         session.commit()
-        # deliver file to user
+        # attempt delivery
         try:
             chat_id = o.user_id
             product = PACKS.get(o.product_id)
@@ -390,9 +484,8 @@ def mark_order_paid_db(order_id, tx_info=None):
 # ---------------- NowPayments integration ----------------
 def create_invoice_nowpayments_db(order):
     """
-    Create invoice via NowPayments.
-    Uses order['currency'] (default USDT).
-    If API key missing, create fake invoice pointing to local /pay/<order>.
+    Create invoice via NowPayments using order['currency'] (default USDT).
+    If NOWPAYMENTS_API_KEY is missing, create a fake invoice that points to /pay/<order_id>
     """
     if not NOWPAYMENTS_API_KEY:
         fake = {
@@ -422,7 +515,6 @@ def create_invoice_nowpayments_db(order):
         return data
     except Exception:
         logger.exception("NowPayments invoice creation failed")
-        # fallback fake
         fake = {
             "id": f"fallback-inv-{order['order_id']}",
             "pay_url": f"{PUBLIC_URL}/pay/{order['order_id']}",
@@ -437,7 +529,7 @@ def create_invoice_nowpayments_db(order):
 # ---------------- Core Logic ----------------
 def handle_update(update):
     try:
-        # plain message
+        # message
         if "message" in update:
             msg = update["message"]
             chat_id = msg["chat"]["id"]
@@ -467,6 +559,7 @@ def handle_update(update):
 
             answer_callback(cq_id)
 
+            # main menu
             if data == "images":
                 send_message(chat_id, "🖼 Image Packs:", reply_markup=packs_keyboard("image"))
                 return
@@ -474,7 +567,12 @@ def handle_update(update):
                 send_message(chat_id, "🎥 Video Packs:", reply_markup=packs_keyboard("video"))
                 return
             if data == "demo":
-                send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Demo image")
+                # show demo of first pack (actual media)
+                first = next(iter(PACKS.values()))
+                if first.get("type") == "video":
+                    send_video(chat_id, first.get("demo_url") or DEFAULT_DEMO_VIDEO, "🎁 Demo preview")
+                else:
+                    send_photo(chat_id, first.get("demo_url") or DEFAULT_DEMO_IMAGE, "🎁 Demo preview")
                 return
             if data == "about":
                 send_message(chat_id, "🤖 Mythic AI Store\nAI-generated image & video packs.")
@@ -483,7 +581,7 @@ def handle_update(update):
                 send_message(chat_id, "Main menu:", reply_markup=main_menu())
                 return
 
-            # pack -> show title/description + actions only (no demo auto-send)
+            # when user presses a pack -> show title/description + actions (no auto demo)
             if data.startswith("pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
@@ -492,7 +590,7 @@ def handle_update(update):
                     send_message(chat_id, caption, reply_markup=pack_actions(pid))
                 return
 
-            # demo preview button -> actually send demo image/video
+            # demo preview for the pack (explicit)
             if data.startswith("demo_pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
@@ -503,28 +601,25 @@ def handle_update(update):
                         send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, "📤 Demo preview")
                 return
 
-            # BUY flow -> create DB order & show payment options
+            # BUY flow: create order in DB then show payment buttons (Pay with Crypto)
             if data.startswith("buy:"):
                 pid = data.split(":", 1)[1]
                 if pid not in PACKS:
                     send_message(chat_id, "Product not found.")
                     return
                 order = create_order_db(chat_id, pid)
-                if not order:
-                    send_message(chat_id, "Failed to create order. Please try again.")
-                    return
-                # show order + "Pay with Crypto" button (uses order_id)
                 send_message(
                     chat_id,
                     f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\n\nChoose payment method:",
-                    reply_markup=payment_select_kb(order["order_id"])
+                    reply_markup=payment_select_for_order(order["order_id"])
                 )
                 return
 
-            # cancel order
+            # cancel (works for either order or pack callbacks)
             if data.startswith("cancel:"):
                 oid = data.split(":", 1)[1]
                 o = get_order_db(oid)
+                # if oid is actually a pack id (user canceled at pack page) handle gracefully
                 if o and o["user_id"] == chat_id:
                     session = SessionLocal()
                     try:
@@ -538,10 +633,11 @@ def handle_update(update):
                     finally:
                         session.close()
                 else:
-                    send_message(chat_id, "Order not found or not yours.")
+                    # if it's not an order or not user's order, just return to main menu
+                    send_message(chat_id, "Returning to main menu.", reply_markup=main_menu())
                 return
 
-            # pay_now -> immediately create invoice and return pay_url (no currency selection)
+            # pay_now -> create invoice with NowPayments and return pay_url (no currency selection)
             if data.startswith("pay_now:"):
                 oid = data.split(":", 1)[1]
                 order = get_order_db(oid)
@@ -550,15 +646,14 @@ def handle_update(update):
                     return
                 invoice = create_invoice_nowpayments_db(order)
                 pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
-                # EXACT text requested by user (English)
                 send_message(
                     chat_id,
-                    f"Invoice created.\nPay here: {pay_url}\n\nAfter payment press <b>I Paid (check)</b>.",
+                    f"Invoice created.\n\nPay here: {pay_url}\n\nAfter payment press <b>I Paid (check)</b>.",
                     reply_markup=invoice_kb(oid)
                 )
                 return
 
-            # retry -> generate new invoice
+            # retry -> new invoice for the same order
             if data.startswith("retry:"):
                 oid = data.split(":", 1)[1]
                 order = get_order_db(oid)
@@ -570,7 +665,7 @@ def handle_update(update):
                 send_message(chat_id, f"New invoice: {pay_url}", reply_markup=invoice_kb(oid))
                 return
 
-            # check paid (manual check)
+            # check_paid -> manual verification: if DB shows paid or invoice.status == paid, deliver
             if data.startswith("check_paid:"):
                 oid = data.split(":", 1)[1]
                 o = get_order_db(oid)
@@ -585,8 +680,9 @@ def handle_update(update):
                     send_message(chat_id, "Payment not detected yet. Please wait a few minutes and try again.")
                 return
 
-    except Exception as e:
-        logger.exception("handle_update failed: %s", e)
+    except Exception:
+        logger.exception("handle_update failed")
+        # do not crash the thread
 
 
 # ---------------- Routes ----------------
@@ -603,7 +699,7 @@ def health():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = request.get_json(force=True)
-    # handle update in background thread to quickly return 200 to Telegram
+    # handle asynchronously so Telegram webhook returns quickly
     threading.Thread(target=handle_update, args=(update,)).start()
     return "ok", 200
 
@@ -649,7 +745,7 @@ def nowpayments_webhook():
         return jsonify({"ok": True, "status": status}), 200
 
 
-# Simple fake pay page (optional convenience for local testing)
+# Simple local fake pay page (for development)
 @app.route("/pay/<order_id>")
 def pay_page(order_id):
     o = get_order_db(order_id)
