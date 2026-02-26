@@ -1,4 +1,15 @@
-# app.py
+#!/usr/bin/env python3
+"""
+Telegram + NowPayments Flask app (final cleaned version).
+
+Behavior:
+- When user taps a pack: show title/description + actions only (do NOT auto-send demo).
+- Demo preview is sent only when user taps "Demo Preview".
+- "Pay by Card" option removed.
+- "Pay with NOWPayments" immediately creates an invoice and returns the invoice URL (no currency selection).
+- All user-facing text is English.
+"""
+
 import os
 import json
 import time
@@ -9,12 +20,11 @@ import hmac
 import hashlib
 from flask import Flask, request, jsonify
 
-# SQLAlchemy
 from sqlalchemy import create_engine, Column, String, BigInteger, Float, JSON as SA_JSON
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ---------- Configuration (from ENV) ----------
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # set in Railway / service variables
+# ---------------- Configuration (from ENV) ----------------
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else None
 
 NOWPAYMENTS_API_KEY = os.getenv("NOWPAYMENTS_API_KEY")
@@ -23,17 +33,10 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "https://example.com")
 
 APP_NAME = "Mythic AI Store"
 
-# fallback defaults (used only if you don't provide a demo link)
 DEFAULT_DEMO_IMAGE = "https://via.placeholder.com/1024x768.png?text=Demo+Image"
 DEFAULT_DEMO_VIDEO = "https://via.placeholder.com/1280x720.png?text=Demo+Video"
 
-# ---------- Allowed currencies (the 20 the user chose) ----------
-CURRENCIES = [
-    "BTC", "ETH", "USDT", "USDC", "SOL", "ADA", "DOT", "XRP", "DOGE", "LTC",
-    "BCH", "TRX", "MATIC", "UNI", "LINK", "BUSD", "DAI", "HBAR", "AVAX", "SHIB"
-]
-
-# ---------- Prices + Catalog (use direct-download links) ----------
+# Prices + Catalog
 PRICES = {
     "face_pack": 10.0,
     "love_pack": 10.0,
@@ -94,20 +97,21 @@ PACKS = {
     },
 }
 
-# ---------- Logging ----------
+# ---------------- Logging ----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mythic-bot")
 
-# ---------- Flask ----------
+# ---------------- Flask ----------------
 app = Flask(__name__)
 
-# ---------- Database (SQLAlchemy) ----------
+# ---------------- Database (SQLAlchemy) ----------------
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("Postgres.DATABASE_URL") or os.getenv("Postgres.DATABASE")
 if not DATABASE_URL:
     DATABASE_URL = os.getenv("LOCAL_DATABASE_URL", "sqlite:///local.db")
     logger.warning("DATABASE_URL is not set. Falling back to local sqlite (development only).")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {})
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -126,12 +130,10 @@ class Order(Base):
     tx_info = Column(SA_JSON, nullable=True)
 
 
-# create tables
 Base.metadata.create_all(bind=engine)
 
-
-# ---------- Helpers: Telegram HTTP ----------
-def telegram_request(method, payload):
+# ---------------- Telegram helpers ----------------
+def telegram_request(method: str, payload: dict):
     if not API_URL:
         logger.error("BOT_TOKEN is not set")
         return None
@@ -163,10 +165,8 @@ def send_photo(chat_id, photo_url, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-
     resp = telegram_request("sendPhoto", payload)
     if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
-        logger.warning("sendPhoto failed with 'wrong type'; falling back to send_message with link")
         text = (caption or "") + "\n\n" + photo_url
         return send_message(chat_id, text, reply_markup=reply_markup)
     return resp
@@ -179,10 +179,8 @@ def send_video(chat_id, video_url, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-
     resp = telegram_request("sendVideo", payload)
     if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
-        logger.warning("sendVideo failed with 'wrong type'; falling back to send_message with link")
         text = (caption or "") + "\n\n" + video_url
         return send_message(chat_id, text, reply_markup=reply_markup)
     return resp
@@ -195,10 +193,8 @@ def send_document(chat_id, doc_url, caption=None, reply_markup=None):
         payload["parse_mode"] = "HTML"
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
-
     resp = telegram_request("sendDocument", payload)
     if resp and not resp.get("ok") and "wrong type" in (resp.get("description") or "").lower():
-        logger.warning("sendDocument failed with 'wrong type'; falling back to send_message with link")
         text = (caption or "") + "\n\n" + doc_url
         return send_message(chat_id, text, reply_markup=reply_markup)
     return resp
@@ -208,7 +204,7 @@ def answer_callback(cq_id):
     telegram_request("answerCallbackQuery", {"callback_query_id": cq_id})
 
 
-# ---------- Keyboards ----------
+# ---------------- Keyboards ----------------
 def main_menu():
     return {
         "inline_keyboard": [
@@ -233,18 +229,8 @@ def pack_actions(pack_id):
     return {
         "inline_keyboard": [
             [{"text": "📤 Demo Preview", "callback_data": f"demo_pack:{pack_id}"}],
-            [{"text": "💳 Buy", "callback_data": f"buy:{pack_id}"}],
-            [{"text": "🔙 Back", "callback_data": "back"}],
-        ]
-    }
-
-
-def payment_select_kb(order_id):
-    return {
-        "inline_keyboard": [
-            [{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{order_id}"}],
-            [{"text": "💳 Pay by Card (coming soon)", "callback_data": f"pay_card:{order_id}"}],
-            [{"text": "❌ Cancel", "callback_data": f"cancel:{order_id}"}],
+            [{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{pack_id}"}],
+            [{"text": "❌ Cancel", "callback_data": f"cancel:{pack_id}"}],
         ]
     }
 
@@ -258,22 +244,7 @@ def invoice_kb(order_id):
     }
 
 
-def currency_keyboard(order_id):
-    # build rows of 4 currencies per row
-    kb = []
-    row = []
-    for i, cur in enumerate(CURRENCIES, start=1):
-        row.append({"text": cur, "callback_data": f"pay_currency:{order_id}:{cur}"})
-        if i % 4 == 0:
-            kb.append(row)
-            row = []
-    if row:
-        kb.append(row)
-    kb.append([{"text": "🔙 Cancel", "callback_data": f"cancel:{order_id}"}])
-    return {"inline_keyboard": kb}
-
-
-# ---------- Utilities (DB) ----------
+# ---------------- Utilities (DB) ----------------
 def generate_order_id():
     return f"ORD{int(time.time() * 1000)}"
 
@@ -289,7 +260,7 @@ def create_order_db(user_id, pack_id):
             user_id=int(user_id),
             product_id=pack_id,
             price=price,
-            currency="USDT",  # default, user will choose later
+            currency="USDT",  # default currency used when creating invoice
             status="pending",
             invoice=None,
             created_at=created_at,
@@ -313,23 +284,6 @@ def create_order_db(user_id, pack_id):
         session.rollback()
         logger.exception("Failed to create order in DB: %s", e)
         raise
-    finally:
-        session.close()
-
-
-def update_order_currency_db(order_id, currency):
-    session = SessionLocal()
-    try:
-        dbo = session.query(Order).filter_by(order_id=order_id).first()
-        if not dbo:
-            return False
-        dbo.currency = currency
-        session.commit()
-        return True
-    except Exception:
-        session.rollback()
-        logger.exception("Failed to update order currency")
-        return False
     finally:
         session.close()
 
@@ -408,7 +362,6 @@ def mark_order_paid_db(order_id, tx_info=None):
             chat_id = o.user_id
             product = PACKS.get(o.product_id)
             if product:
-                # try send_document (zip) and fallback to sending link
                 send_document(chat_id, product.get("deliver_url"), caption=f"Here is your pack: {product.get('title')}")
             else:
                 send_message(chat_id, "✅ Payment confirmed. Your file is ready.")
@@ -423,11 +376,12 @@ def mark_order_paid_db(order_id, tx_info=None):
         session.close()
 
 
-# ---------- NowPayments integration ----------
+# ---------------- NowPayments integration ----------------
 def create_invoice_nowpayments_db(order):
     """
-    Create invoice via NowPayments. Uses order['currency'] as price_currency.
-    If API key missing, create fake invoice.
+    Create invoice via NowPayments.
+    Uses order['currency'] (default USDT).
+    If API key missing, create fake invoice pointing to local /pay/<order>.
     """
     if not NOWPAYMENTS_API_KEY:
         fake = {
@@ -469,7 +423,7 @@ def create_invoice_nowpayments_db(order):
         return fake
 
 
-# ---------- Core Logic ----------
+# ---------------- Core Logic ----------------
 def handle_update(update):
     try:
         # plain message
@@ -509,8 +463,7 @@ def handle_update(update):
                 send_message(chat_id, "🎥 Video Packs:", reply_markup=packs_keyboard("video"))
                 return
             if data == "demo":
-                # show a general demo image (fallback)
-                send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Free demo image")
+                send_photo(chat_id, DEFAULT_DEMO_IMAGE, "🎁 Demo image")
                 return
             if data == "about":
                 send_message(chat_id, "🤖 Mythic AI Store\nAI-generated image & video packs.")
@@ -519,17 +472,16 @@ def handle_update(update):
                 send_message(chat_id, "Main menu:", reply_markup=main_menu())
                 return
 
+            # pack -> show title/description + actions only
             if data.startswith("pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
                 if p:
                     caption = f"<b>{p['title']}</b>\n{p['description']}"
-                    if p.get("type") == "video":
-                        send_video(chat_id, p.get("demo_url") or DEFAULT_DEMO_VIDEO, caption, reply_markup=pack_actions(pid))
-                    else:
-                        send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, caption, reply_markup=pack_actions(pid))
+                    send_message(chat_id, caption, reply_markup=pack_actions(pid))
                 return
 
+            # demo preview button -> actually send demo image/video
             if data.startswith("demo_pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
@@ -540,19 +492,21 @@ def handle_update(update):
                         send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, "📤 Demo preview")
                 return
 
-            # BUY flow
+            # BUY flow -> create DB order & show payment options (NOWPayments only)
             if data.startswith("buy:"):
                 pid = data.split(":", 1)[1]
                 if pid not in PACKS:
                     send_message(chat_id, "Product not found.")
                     return
                 order = create_order_db(chat_id, pid)
-                send_message(chat_id,
-                             f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\n\nChoose payment method:",
-                             reply_markup=payment_select_kb(order["order_id"]))
+                send_message(
+                    chat_id,
+                    f"🧾 Order created: <b>{order['order_id']}</b>\nProduct: {pid}\nPrice: {order['price']} {order['currency']}\n\nChoose payment method:",
+                    reply_markup={"inline_keyboard": [[{"text": "💰 Pay with NOWPayments", "callback_data": f"pay_now:{order['order_id']}"}, {"text": "❌ Cancel", "callback_data": f"cancel:{order['order_id']}"}]]}
+                )
                 return
 
-            # cancel
+            # cancel order
             if data.startswith("cancel:"):
                 oid = data.split(":", 1)[1]
                 o = get_order_db(oid)
@@ -572,43 +526,32 @@ def handle_update(update):
                     send_message(chat_id, "Order not found or not yours.")
                 return
 
-            # pay now -> first ask currency selection (instead of creating invoice immediately)
+            # pay_now -> immediately create invoice and return pay_url (no currency selection)
             if data.startswith("pay_now:"):
                 oid = data.split(":", 1)[1]
-                o = get_order_db(oid)
-                if not o:
+                order = get_order_db(oid)
+                if not order:
                     send_message(chat_id, "Order not found.")
                     return
-                send_message(chat_id, "لطفا ارز پرداخت را انتخاب کنید:", reply_markup=currency_keyboard(oid))
-                return
-
-            # user selected a currency -> create invoice with that currency
-            if data.startswith("pay_currency:"):
-                # format: pay_currency:ORDERID:CUR
-                parts = data.split(":")
-                if len(parts) < 3:
-                    send_message(chat_id, "Invalid selection.")
-                    return
-                oid = parts[1]
-                cur = parts[2]
-                if cur not in CURRENCIES:
-                    send_message(chat_id, "Invalid currency.")
-                    return
-                # update order currency
-                ok = update_order_currency_db(oid, cur)
-                if not ok:
-                    send_message(chat_id, "Failed to update order. Try again.")
-                    return
-                order = get_order_db(oid)
                 invoice = create_invoice_nowpayments_db(order)
                 pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
-                send_message(chat_id, f"Invoice created.\nPay here: {pay_url}\n\nپس از پرداخت روی <b>I Paid (check)</b> بزنید تا وضعیت بررسی شود.", reply_markup=invoice_kb(oid))
+                send_message(
+                    chat_id,
+                    f"Invoice created.\n\nPay here: {pay_url}\n\nAfter payment press <b>I Paid (check)</b>.",
+                    reply_markup=invoice_kb(oid)
+                )
                 return
 
-            # placeholder for card payments (coming soon)
-            if data.startswith("pay_card:"):
+            # retry -> generate new invoice
+            if data.startswith("retry:"):
                 oid = data.split(":", 1)[1]
-                send_message(chat_id, "💳 پرداخت کارت فعلاً در دست ساخت است. به زودی اضافه می‌شود.")
+                order = get_order_db(oid)
+                if not order:
+                    send_message(chat_id, "Order not found.")
+                    return
+                invoice = create_invoice_nowpayments_db(order)
+                pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
+                send_message(chat_id, f"New invoice: {pay_url}", reply_markup=invoice_kb(oid))
                 return
 
             # check paid (manual check)
@@ -623,26 +566,14 @@ def handle_update(update):
                     mark_order_paid_db(oid, tx_info=invoice)
                     send_message(chat_id, f"Order {oid} is already paid and delivered.")
                 else:
-                    send_message(chat_id, "Payment not detected yet. If you really paid, صبر کن یا دوباره امتحان کن.")
-                return
-
-            # retry -> generate new invoice (keeps current order.currency)
-            if data.startswith("retry:"):
-                oid = data.split(":", 1)[1]
-                order = get_order_db(oid)
-                if not order:
-                    send_message(chat_id, "Order not found.")
-                    return
-                invoice = create_invoice_nowpayments_db(order)
-                pay_url = invoice.get("pay_url") or invoice.get("invoice_url") or invoice.get("url") or f"{PUBLIC_URL}/pay/{oid}"
-                send_message(chat_id, f"New invoice: {pay_url}", reply_markup=invoice_kb(oid))
+                    send_message(chat_id, "Payment not detected yet. Please wait a few minutes and try again.")
                 return
 
     except Exception as e:
         logger.exception("handle_update failed: %s", e)
 
 
-# ---------- Routes ----------
+# ---------------- Routes ----------------
 @app.route("/")
 def index():
     return f"{APP_NAME} is running 🚀"
@@ -729,7 +660,7 @@ def pay_simulate(order_id):
     return f"Order {order_id} marked as paid (simulated). You can return to Telegram."
 
 
-# ---------- Run ----------
+# ---------------- Run ----------------
 if __name__ == "__main__":
     if not BOT_TOKEN:
         logger.warning("BOT_TOKEN is NOT set. Telegram messages will fail.")
