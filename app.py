@@ -4,11 +4,13 @@ Telegram + NowPayments Flask app - cleaned & fixed.
 
 Behavior:
 - Main "Demo" sends one random demo from DEMO_POOL (24h cooldown per user).
-- Pressing a pack (pack:<id>) immediately sends that pack's demo media (no "Demo Preview").
+- Each pack has a "📤 Demo Preview" button. When pressed:
+  1) bot sends "⏳ Wait a minute..."
+  2) bot downloads/prepares media and uploads it (photo/video).
+- Images are attempted to be compressed/resized (via Pillow) to allow sendPhoto (thumbnail).
 - Robust download-and-upload logic to avoid Telegram URL-fetch errors and size/type issues.
 - Payment flow unchanged.
 """
-
 import os
 import json
 import time
@@ -23,6 +25,12 @@ from flask import Flask, request, jsonify
 
 from sqlalchemy import create_engine, Column, String, BigInteger, Float, JSON as SA_JSON
 from sqlalchemy.orm import sessionmaker, declarative_base
+
+# Image processing
+try:
+    from PIL import Image, ImageOps
+except Exception:
+    raise RuntimeError("Pillow is required. Install with: pip install pillow")
 
 # ---------------- Configuration ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -223,9 +231,10 @@ def packs_keyboard(p_type):
 
 
 def pack_actions(pack_id):
-    # Only Buy / Back here (no demo preview)
+    # Demo Preview / Buy / Back
     return {
         "inline_keyboard": [
+            [{"text": "📤 Demo Preview", "callback_data": f"demo_pack:{pack_id}"}],
             [{"text": "💳 Buy", "callback_data": f"buy:{pack_id}"}],
             [{"text": "🔙 Back", "callback_data": "back"}],
         ]
@@ -420,6 +429,50 @@ def create_invoice_nowpayments_db(order):
         update_order_invoice_db(order["order_id"], fake)
         return fake
 
+# ---------------- Image helpers ----------------
+def compress_image_to_jpeg_bytes(img_bytes, target_bytes=10 * 1024 * 1024):
+    """
+    Try to convert/resize/compress an image to JPEG bytes under target_bytes.
+    Returns (bytes, content_type) or (None, None) if cannot.
+    """
+    try:
+        img = Image.open(BytesIO(img_bytes))
+        img = ImageOps.exif_transpose(img)  # fix rotation
+        # convert to RGB for JPEG
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
+        # initial attempt: quality steps
+        quality = 85
+        step = 10
+        max_iters = 10
+        width, height = img.size
+
+        for i in range(max_iters):
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            if len(data) <= target_bytes or (quality <= 20 and (width < 400 or height < 400)):
+                return data, "image/jpeg"
+            # reduce quality first, if quality low then downscale
+            if quality > 35:
+                quality = max(20, quality - step)
+            else:
+                # downscale by 90%
+                width = int(width * 0.9)
+                height = int(height * 0.9)
+                img = img.resize((max(1, width), max(1, height)), Image.LANCZOS)
+        # final check
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=20, optimize=True)
+        data = buf.getvalue()
+        if len(data) <= target_bytes:
+            return data, "image/jpeg"
+        return None, None
+    except Exception:
+        logger.exception("compress_image_to_jpeg_bytes failed")
+        return None, None
+
 # ---------------- Demo helpers & robust sender ----------------
 def user_can_request_demo(user_id):
     last = DEMO_USAGE.get(int(user_id))
@@ -439,8 +492,8 @@ def try_send_demo_media(chat_id, media_url, caption=None, reply_markup=None):
     """
     Download file, inspect Content-Type and size, and upload to Telegram accordingly.
     Prioritize:
-      - if video -> sendVideo multipart
-      - if image & <=10MB -> sendPhoto multipart
+      - if video -> sendVideo multipart (<=50MB)
+      - if image -> try to compress to <=10MB and sendPhoto multipart; if fails sendDocument
       - otherwise -> sendDocument multipart (<=50MB)
     Fallback: send text message with link.
     """
@@ -455,7 +508,6 @@ def try_send_demo_media(chat_id, media_url, caption=None, reply_markup=None):
         max_telegram = 50 * 1024 * 1024
 
         if size > max_telegram:
-            # too big to upload to Telegram
             return send_message(chat_id, f"The file is too large for Telegram to upload.\n\n{media_url}")
 
         data = {"chat_id": str(chat_id)}
@@ -465,23 +517,34 @@ def try_send_demo_media(chat_id, media_url, caption=None, reply_markup=None):
         if reply_markup:
             data["reply_markup"] = json.dumps(reply_markup)
 
-        # If it's a video
+        # VIDEO detection
         if "video" in ctype or media_url.lower().endswith((".mp4", ".mov", ".webm", ".mkv")):
             files = {"video": ("file.mp4", BytesIO(content), ctype or "video/mp4")}
             return telegram_request_multipart("sendVideo", data, files)
 
-        # If image and small enough
-        if "image" in ctype and size <= max_photo:
-            files = {"photo": ("file.jpg", BytesIO(content), ctype or "image/jpeg")}
-            return telegram_request_multipart("sendPhoto", data, files)
+        # IMAGE detection
+        if "image" in ctype or media_url.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+            # if small enough already -> sendPhoto multipart
+            if size <= max_photo:
+                files = {"photo": ("file.jpg", BytesIO(content), ctype or "image/jpeg")}
+                return telegram_request_multipart("sendPhoto", data, files)
 
-        # Otherwise send as document (universal)
+            # try compress/convert to JPEG under limit
+            compressed_bytes, out_ctype = compress_image_to_jpeg_bytes(content, target_bytes=max_photo)
+            if compressed_bytes:
+                files = {"photo": ("file.jpg", BytesIO(compressed_bytes), out_ctype)}
+                return telegram_request_multipart("sendPhoto", data, files)
+
+            # fallback to sending as document if compression fails
+            files = {"document": ("file", BytesIO(content), ctype or "application/octet-stream")}
+            return telegram_request_multipart("sendDocument", data, files)
+
+        # OTHERWISE: send as document
         files = {"document": ("file", BytesIO(content), ctype or "application/octet-stream")}
         return telegram_request_multipart("sendDocument", data, files)
 
     except Exception:
         logger.exception("try_send_demo_media failed")
-        # fallback: just send link so user still gets something
         return send_message(chat_id, (caption or "Demo") + "\n\n" + media_url, reply_markup=reply_markup)
 
 # ---------------- Core Logic ----------------
@@ -554,15 +617,28 @@ def handle_update(update):
                 send_message(chat_id, "Main menu:", reply_markup=main_menu())
                 return
 
-            # when user presses a pack -> immediately send that pack media and show Buy/Back
+            # when user presses a pack -> show title/description + actions (with Demo Preview)
             if data.startswith("pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
                 if p:
                     caption = f"<b>{p['title']}</b>\n{p['description']}"
-                    # send the media (download & upload as appropriate); show Buy/Back after as reply_markup
-                    try_send_demo_media(chat_id, p.get("demo_url") or (DEFAULT_DEMO_VIDEO if p.get("type") == "video" else DEFAULT_DEMO_IMAGE),
-                                        caption=caption, reply_markup=pack_actions(pid))
+                    send_message(chat_id, caption, reply_markup=pack_actions(pid))
+                return
+
+            # demo preview for the pack (explicit) - show wait message then send
+            if data.startswith("demo_pack:"):
+                pid = data.split(":", 1)[1]
+                p = PACKS.get(pid)
+                if not p:
+                    send_message(chat_id, "Product not found.")
+                    return
+                # send wait message first
+                send_message(chat_id, "⏳ Wait a minute...")
+                caption = f"<b>{p['title']}</b>\n{p['description']}"
+                # send the demo media (will handle image/video properly)
+                try_send_demo_media(chat_id, p.get("demo_url") or (DEFAULT_DEMO_VIDEO if p.get("type") == "video" else DEFAULT_DEMO_IMAGE),
+                                    caption=caption, reply_markup=pack_actions(pid))
                 return
 
             # BUY flow: create order in DB then show payment buttons (Pay with Crypto)
