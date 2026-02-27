@@ -2,13 +2,11 @@
 """
 Telegram + NowPayments Flask app - cleaned & fixed.
 
-Features added/kept:
-- 🎁 Demo (main menu) -> sends one random demo media from DEMO_POOL.
-  After a demo is sent to a user, they must wait 24 hours to request another demo.
-- Demo Preview inside a pack -> sends that pack's demo_url (unchanged behavior).
-- Robust fallbacks for Telegram "wrong type of the web page content".
-- NowPayments integration left intact (fake invoices when API key missing).
-- All user-facing text in English.
+Behavior:
+- Main "Demo" sends one random demo from DEMO_POOL (24h cooldown per user).
+- Pressing a pack (pack:<id>) immediately sends that pack's demo media (no "Demo Preview").
+- Robust download-and-upload logic to avoid Telegram URL-fetch errors and size/type issues.
+- Payment flow unchanged.
 """
 
 import os
@@ -53,7 +51,6 @@ def gdrive_uc_url(file_id: str) -> str:
     return f"https://drive.google.com/uc?export=download&id={file_id}"
 
 # ---------------- PACKS & DEMO POOL ----------------
-# Replaced demo URLs using the links you provided. deliver_url left untouched (as requested).
 PACKS = {
     "face_pack": {
         "id": "face_pack",
@@ -105,7 +102,6 @@ PACKS = {
     },
 }
 
-# DEMO_POOL: the list of Google Drive IDs you labeled "Demo"
 DEMO_POOL = [
     gdrive_uc_url("1nzThkEqpE4r2op9RQxodZn34ICGcWSNu"),
     gdrive_uc_url("1CvfO009_kAgvK147-kbVbzmGW4cLHnxo"),
@@ -119,7 +115,6 @@ DEMO_POOL = [
 ]
 
 # Demo usage tracking (in-memory). Maps user_id -> last_demo_epoch_seconds
-# Note: this is ephemeral (lost on process restart). If you need persistence, store in DB.
 DEMO_USAGE = {}
 DEMO_COOLDOWN_SECONDS = 24 * 3600  # 24 hours
 
@@ -160,7 +155,6 @@ Base.metadata.create_all(bind=engine)
 
 # ---------------- Telegram helpers ----------------
 def telegram_request_json(method: str, payload: dict, timeout=20):
-    """Send JSON request to Telegram Bot API."""
     if not API_URL:
         logger.error("BOT_TOKEN is not set")
         return None
@@ -178,8 +172,7 @@ def telegram_request_json(method: str, payload: dict, timeout=20):
         return None
 
 
-def telegram_request_multipart(method: str, data: dict, files: dict, timeout=60):
-    """Send multipart/form-data request to Telegram (for uploading files)."""
+def telegram_request_multipart(method: str, data: dict, files: dict, timeout=120):
     if not API_URL:
         logger.error("BOT_TOKEN is not set")
         return None
@@ -202,120 +195,6 @@ def send_message(chat_id, text, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     return telegram_request_json("sendMessage", payload)
-
-
-def send_photo(chat_id, photo_url, caption=None, reply_markup=None):
-    """
-    Try to send photo by URL first. If Telegram returns `wrong type of the web page content`,
-    attempt to download the image and upload it to Telegram (multipart).
-    """
-    payload = {"chat_id": chat_id, "photo": photo_url}
-    if caption:
-        payload["caption"] = caption
-        payload["parse_mode"] = "HTML"
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-
-    resp = telegram_request_json("sendPhoto", payload)
-    if resp and not resp.get("ok"):
-        desc = (resp.get("description") or "").lower()
-        if "wrong type of the web page content" in desc or "web page" in desc:
-            # try to download and upload
-            try:
-                r = requests.get(photo_url, timeout=20, stream=True)
-                r.raise_for_status()
-                content = r.content
-                ctype = r.headers.get("Content-Type", "") or "image/jpeg"
-                # send as multipart
-                files = {"photo": ("demo.jpg", BytesIO(content), ctype)}
-                data = {"chat_id": str(chat_id)}
-                if caption:
-                    data["caption"] = caption
-                    data["parse_mode"] = "HTML"
-                multi = telegram_request_multipart("sendPhoto", data, files)
-                return multi
-            except Exception:
-                logger.exception("Failed to download/upload photo fallback")
-                # send link message as last resort
-                text = (caption or "") + "\n\n" + photo_url
-                return send_message(chat_id, text, reply_markup=reply_markup)
-    return resp
-
-
-def send_video(chat_id, video_url, caption=None, reply_markup=None):
-    """
-    For video: try send by URL; if Telegram rejects and the file is reasonably small (<50MB),
-    attempt to download and upload. Otherwise fallback to sendMessage with the URL.
-    """
-    payload = {"chat_id": chat_id, "video": video_url}
-    if caption:
-        payload["caption"] = caption
-        payload["parse_mode"] = "HTML"
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-
-    resp = telegram_request_json("sendVideo", payload)
-    if resp and not resp.get("ok"):
-        desc = (resp.get("description") or "").lower()
-        if "wrong type of the web page content" in desc or "web page" in desc:
-            try:
-                r = requests.get(video_url, timeout=30, stream=True)
-                r.raise_for_status()
-                content_length = int(r.headers.get("Content-Length") or 0)
-                max_size = 50 * 1024 * 1024  # 50 MB
-                if content_length and content_length > max_size:
-                    # too big to upload; fallback to link
-                    text = (caption or "") + "\n\n" + video_url
-                    return send_message(chat_id, text, reply_markup=reply_markup)
-                content = r.content
-                ctype = r.headers.get("Content-Type", "") or "video/mp4"
-                files = {"video": ("demo.mp4", BytesIO(content), ctype)}
-                data = {"chat_id": str(chat_id)}
-                if caption:
-                    data["caption"] = caption
-                    data["parse_mode"] = "HTML"
-                multi = telegram_request_multipart("sendVideo", data, files)
-                return multi
-            except Exception:
-                logger.exception("Failed to download/upload video fallback")
-                text = (caption or "") + "\n\n" + video_url
-                return send_message(chat_id, text, reply_markup=reply_markup)
-    return resp
-
-
-def send_document(chat_id, doc_url, caption=None, reply_markup=None):
-    payload = {"chat_id": chat_id, "document": doc_url}
-    if caption:
-        payload["caption"] = caption
-        payload["parse_mode"] = "HTML"
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-
-    resp = telegram_request_json("sendDocument", payload)
-    if resp and not resp.get("ok"):
-        desc = (resp.get("description") or "").lower()
-        if "wrong type of the web page content" in desc:
-            # try to download and upload as document (if size reasonable)
-            try:
-                r = requests.get(doc_url, timeout=30, stream=True)
-                r.raise_for_status()
-                content_length = int(r.headers.get("Content-Length") or 0)
-                max_size = 50 * 1024 * 1024
-                if content_length and content_length > max_size:
-                    return send_message(chat_id, (caption or "") + "\n\n" + doc_url)
-                content = r.content
-                ctype = r.headers.get("Content-Type", "") or "application/octet-stream"
-                files = {"document": ("file", BytesIO(content), ctype)}
-                data = {"chat_id": str(chat_id)}
-                if caption:
-                    data["caption"] = caption
-                    data["parse_mode"] = "HTML"
-                multi = telegram_request_multipart("sendDocument", data, files)
-                return multi
-            except Exception:
-                logger.exception("Failed to download/upload document fallback")
-                return send_message(chat_id, (caption or "") + "\n\n" + doc_url)
-    return resp
 
 
 def answer_callback(cq_id):
@@ -344,10 +223,9 @@ def packs_keyboard(p_type):
 
 
 def pack_actions(pack_id):
-    # Only Demo Preview / Buy / Back here. Buy -> create order.
+    # Only Buy / Back here (no demo preview)
     return {
         "inline_keyboard": [
-            [{"text": "📤 Demo Preview", "callback_data": f"demo_pack:{pack_id}"}],
             [{"text": "💳 Buy", "callback_data": f"buy:{pack_id}"}],
             [{"text": "🔙 Back", "callback_data": "back"}],
         ]
@@ -355,7 +233,6 @@ def pack_actions(pack_id):
 
 
 def payment_select_for_order(order_id):
-    # Shows Pay with Crypto and Cancel for a created order
     return {
         "inline_keyboard": [
             [{"text": "💰 Pay with Crypto", "callback_data": f"pay_now:{order_id}"}],
@@ -371,7 +248,6 @@ def invoice_kb(order_id):
             [{"text": "🔁 Retry / New Invoice", "callback_data": f"retry:{order_id}"}],
         ]
     }
-
 
 # ---------------- Utilities (DB) ----------------
 def generate_order_id():
@@ -389,7 +265,7 @@ def create_order_db(user_id, pack_id):
             user_id=int(user_id),
             product_id=pack_id,
             price=price,
-            currency="USDT",  # default currency on invoice
+            currency="USDT",
             status="pending",
             invoice=None,
             created_at=created_at,
@@ -486,12 +362,12 @@ def mark_order_paid_db(order_id, tx_info=None):
         o.paid_at = int(time.time())
         o.tx_info = tx_info
         session.commit()
-        # attempt delivery
+        # attempt delivery (use try_send_demo_media to handle Drive links robustly)
         try:
             chat_id = o.user_id
             product = PACKS.get(o.product_id)
             if product:
-                send_document(chat_id, product.get("deliver_url"), caption=f"Here is your pack: {product.get('title')}")
+                try_send_demo_media(chat_id, product.get("deliver_url"), caption=f"Here is your pack: {product.get('title')}")
             else:
                 send_message(chat_id, "✅ Payment confirmed. Your file is ready.")
         except Exception:
@@ -504,13 +380,8 @@ def mark_order_paid_db(order_id, tx_info=None):
     finally:
         session.close()
 
-
 # ---------------- NowPayments integration ----------------
 def create_invoice_nowpayments_db(order):
-    """
-    Create invoice via NowPayments using order['currency'] (default USDT).
-    If NOWPAYMENTS_API_KEY is missing, create a fake invoice that points to /pay/<order_id>
-    """
     if not NOWPAYMENTS_API_KEY:
         fake = {
             "id": f"fake-inv-{order['order_id']}",
@@ -549,10 +420,8 @@ def create_invoice_nowpayments_db(order):
         update_order_invoice_db(order["order_id"], fake)
         return fake
 
-
-# ---------------- Demo helpers ----------------
+# ---------------- Demo helpers & robust sender ----------------
 def user_can_request_demo(user_id):
-    """Return (allowed: bool, seconds_left: int)"""
     last = DEMO_USAGE.get(int(user_id))
     if not last:
         return True, 0
@@ -568,37 +437,52 @@ def record_demo_usage(user_id):
 
 def try_send_demo_media(chat_id, media_url, caption=None, reply_markup=None):
     """
-    Try to send as video, then photo, then document, then fallback to sendMessage with link.
-    Returns Telegram API response object (or None).
+    Download file, inspect Content-Type and size, and upload to Telegram accordingly.
+    Prioritize:
+      - if video -> sendVideo multipart
+      - if image & <=10MB -> sendPhoto multipart
+      - otherwise -> sendDocument multipart (<=50MB)
+    Fallback: send text message with link.
     """
-    # try video
     try:
-        vresp = send_video(chat_id, media_url, caption=caption, reply_markup=reply_markup)
-        if vresp and vresp.get("ok"):
-            return vresp
+        r = requests.get(media_url, timeout=60, stream=True)
+        r.raise_for_status()
+        content = r.content
+        size = len(content)
+        ctype = (r.headers.get("Content-Type") or "").lower()
+
+        max_photo = 10 * 1024 * 1024
+        max_telegram = 50 * 1024 * 1024
+
+        if size > max_telegram:
+            # too big to upload to Telegram
+            return send_message(chat_id, f"The file is too large for Telegram to upload.\n\n{media_url}")
+
+        data = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption
+            data["parse_mode"] = "HTML"
+        if reply_markup:
+            data["reply_markup"] = json.dumps(reply_markup)
+
+        # If it's a video
+        if "video" in ctype or media_url.lower().endswith((".mp4", ".mov", ".webm", ".mkv")):
+            files = {"video": ("file.mp4", BytesIO(content), ctype or "video/mp4")}
+            return telegram_request_multipart("sendVideo", data, files)
+
+        # If image and small enough
+        if "image" in ctype and size <= max_photo:
+            files = {"photo": ("file.jpg", BytesIO(content), ctype or "image/jpeg")}
+            return telegram_request_multipart("sendPhoto", data, files)
+
+        # Otherwise send as document (universal)
+        files = {"document": ("file", BytesIO(content), ctype or "application/octet-stream")}
+        return telegram_request_multipart("sendDocument", data, files)
+
     except Exception:
-        logger.exception("send_video failed for demo media")
-
-    # try photo
-    try:
-        presp = send_photo(chat_id, media_url, caption=caption, reply_markup=reply_markup)
-        if presp and presp.get("ok"):
-            return presp
-    except Exception:
-        logger.exception("send_photo failed for demo media")
-
-    # try document
-    try:
-        dresp = send_document(chat_id, media_url, caption=caption, reply_markup=reply_markup)
-        if dresp and dresp.get("ok"):
-            return dresp
-    except Exception:
-        logger.exception("send_document failed for demo media")
-
-    # last resort: send link text
-    text = (caption or "Demo") + "\n\n" + media_url
-    return send_message(chat_id, text, reply_markup=reply_markup)
-
+        logger.exception("try_send_demo_media failed")
+        # fallback: just send link so user still gets something
+        return send_message(chat_id, (caption or "Demo") + "\n\n" + media_url, reply_markup=reply_markup)
 
 # ---------------- Core Logic ----------------
 def handle_update(update):
@@ -640,8 +524,8 @@ def handle_update(update):
             if data == "videos":
                 send_message(chat_id, "🎥 Video Packs:", reply_markup=packs_keyboard("video"))
                 return
+
             if data == "demo":
-                # Demo: enforce per-user 24h cooldown, and pick random item from DEMO_POOL
                 allowed, seconds_left = user_can_request_demo(chat_id)
                 if not allowed:
                     hours = int(seconds_left // 3600)
@@ -653,23 +537,13 @@ def handle_update(update):
                     return
 
                 if not DEMO_POOL:
-                    # fallback: show first pack demo or placeholder
                     first = next(iter(PACKS.values()))
-                    if first.get("type") == "video":
-                        resp = send_video(chat_id, first.get("demo_url") or DEFAULT_DEMO_VIDEO, "🎁 Demo preview")
-                    else:
-                        resp = send_photo(chat_id, first.get("demo_url") or DEFAULT_DEMO_IMAGE, "🎁 Demo preview")
+                    try_send_demo_media(chat_id, first.get("demo_url") or DEFAULT_DEMO_IMAGE, caption="🎁 Demo — enjoy!")
                     record_demo_usage(chat_id)
                     return
 
-                # pick random media
                 media_url = random.choice(DEMO_POOL)
-                caption = "🎁 Demo — enjoy!"
-                try:
-                    try_send_demo_media(chat_id, media_url, caption=caption)
-                except Exception:
-                    logger.exception("Failed sending demo media")
-                    send_message(chat_id, f"Demo: {media_url}")
+                try_send_demo_media(chat_id, media_url, caption="🎁 Demo — enjoy!")
                 record_demo_usage(chat_id)
                 return
 
@@ -680,24 +554,15 @@ def handle_update(update):
                 send_message(chat_id, "Main menu:", reply_markup=main_menu())
                 return
 
-            # when user presses a pack -> show title/description + actions (no auto demo)
+            # when user presses a pack -> immediately send that pack media and show Buy/Back
             if data.startswith("pack:"):
                 pid = data.split(":", 1)[1]
                 p = PACKS.get(pid)
                 if p:
                     caption = f"<b>{p['title']}</b>\n{p['description']}"
-                    send_message(chat_id, caption, reply_markup=pack_actions(pid))
-                return
-
-            # demo preview for the pack (explicit)
-            if data.startswith("demo_pack:"):
-                pid = data.split(":", 1)[1]
-                p = PACKS.get(pid)
-                if p:
-                    if p.get("type") == "video":
-                        send_video(chat_id, p.get("demo_url") or DEFAULT_DEMO_VIDEO, "📤 Demo preview")
-                    else:
-                        send_photo(chat_id, p.get("demo_url") or DEFAULT_DEMO_IMAGE, "📤 Demo preview")
+                    # send the media (download & upload as appropriate); show Buy/Back after as reply_markup
+                    try_send_demo_media(chat_id, p.get("demo_url") or (DEFAULT_DEMO_VIDEO if p.get("type") == "video" else DEFAULT_DEMO_IMAGE),
+                                        caption=caption, reply_markup=pack_actions(pid))
                 return
 
             # BUY flow: create order in DB then show payment buttons (Pay with Crypto)
@@ -718,7 +583,6 @@ def handle_update(update):
             if data.startswith("cancel:"):
                 oid = data.split(":", 1)[1]
                 o = get_order_db(oid)
-                # if oid is actually a pack id (user canceled at pack page) handle gracefully
                 if o and o["user_id"] == chat_id:
                     session = SessionLocal()
                     try:
@@ -732,7 +596,6 @@ def handle_update(update):
                     finally:
                         session.close()
                 else:
-                    # if it's not an order or not user's order, just return to main menu
                     send_message(chat_id, "Returning to main menu.", reply_markup=main_menu())
                 return
 
@@ -783,7 +646,6 @@ def handle_update(update):
         logger.exception("handle_update failed")
         # do not crash the thread
 
-
 # ---------------- Routes ----------------
 @app.route("/")
 def index():
@@ -798,7 +660,6 @@ def health():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = request.get_json(force=True)
-    # handle asynchronously so Telegram webhook returns quickly
     threading.Thread(target=handle_update, args=(update,)).start()
     return "ok", 200
 
@@ -843,7 +704,6 @@ def nowpayments_webhook():
         update_order_invoice_db(order_id, {"status": status})
         return jsonify({"ok": True, "status": status}), 200
 
-
 # Simple local fake pay page (for development)
 @app.route("/pay/<order_id>")
 def pay_page(order_id):
@@ -870,7 +730,6 @@ def pay_simulate(order_id):
     payload = {"order_id": order_id, "status": "finished", "invoice_id": f"sim-{order_id}"}
     mark_order_paid_db(order_id, tx_info=payload)
     return f"Order {order_id} marked as paid (simulated). You can return to Telegram."
-
 
 # ---------------- Run ----------------
 if __name__ == "__main__":
