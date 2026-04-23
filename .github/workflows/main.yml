@@ -1,4 +1,4 @@
-name: Test & Save Results
+name: Test & Save Results Locally
 on: [push, pull_request]
 
 jobs:
@@ -14,12 +14,9 @@ jobs:
         node-version: 20
         
     - name: Install Playwright
-      run: |
-        npm init -y
-        npm install --save-dev @playwright/test@latest
-        npx playwright install --with-deps
+      run: npm install --save-dev @playwright/test@latest && npx playwright install --with-deps
     
-    - name: Run test & save TXT
+    - name: Google Test + Save Results
       run: |
         cat > test.js << 'EOF'
         const { chromium } = require('playwright');
@@ -27,18 +24,26 @@ jobs:
           const browser = await chromium.launch();
           const page = await browser.newPage();
           await page.goto('https://google.com');
-          await page.keyboard.type('سلام');
-          await page.screenshot({ path: 'test.png' });
+          console.log('صفحه: google.com');
+          
+          await page.fill('textarea[name="q"]', 'سلام');
+          console.log('سلام تایپ شد');
+          
+          const title = await page.title();
+          console.log('عنوان:', title);
+          
           await browser.close();
-          console.log('✅ تست OK - سلام تایپ شد!');
+          console.log('✅ تست تمام!');
         })();
         EOF
         
-        node test.js > results.txt 2>&1
-        cat results.txt
-    
-    - name: Upload TXT result
-      uses: actions/upload-artifact@v4
-      with:
-        name: test-results-txt
-        path: results.txt
+        node test.js > test-results.txt 2>&1
+        
+    - name: Show & Commit Results
+      run: |
+        cat test-results.txt
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add test-results.txt
+        git commit -m "Add test results" || echo "No changes"
+        git push
