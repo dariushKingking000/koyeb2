@@ -1,31 +1,44 @@
-name: Install Playwright
+name: Test & Save Results
 on: [push, pull_request]
 
 jobs:
-  install:
+  test:
     runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Node.js
+    - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
         
-    - name: Install everything
+    - name: Install Playwright
       run: |
         npm init -y
         npm install --save-dev @playwright/test@latest
-        npx playwright install --with-deps chromium firefox webkit
-        
-    - name: Verify installation
-      run: |
-        npx playwright --version
-        ls -la node_modules/.bin/playwright*
-        echo "✅ ALL BROWSERS INSTALLED!"
+        npx playwright install --with-deps
     
-    - name: List files
+    - name: Run test & save TXT
       run: |
-        ls -la
-        echo "✅ Installation COMPLETE!"
+        cat > test.js << 'EOF'
+        const { chromium } = require('playwright');
+        (async () => {
+          const browser = await chromium.launch();
+          const page = await browser.newPage();
+          await page.goto('https://google.com');
+          await page.keyboard.type('سلام');
+          await page.screenshot({ path: 'test.png' });
+          await browser.close();
+          console.log('✅ تست OK - سلام تایپ شد!');
+        })();
+        EOF
+        
+        node test.js > results.txt 2>&1
+        cat results.txt
+    
+    - name: Upload TXT result
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-txt
+        path: results.txt
