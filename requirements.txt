@@ -1,6 +1,2 @@
-Flask
-gunicorn
-requests
-sqlalchemy
-psycopg2-binary
-pillow
+selenium==4.15.2
+webdriver-manager==4.0.1
