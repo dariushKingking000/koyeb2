@@ -1,0 +1,23 @@
+name: Create TXT File Action
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+
+      # اینجا نام فایل را به apper.py تغییر دادیم
+      - name: Run the Python script
+        run: python apper.py 
+
+      - name: Verify file creation
+        run: cat output.txt
