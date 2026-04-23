@@ -1,23 +1,21 @@
-# apper.py - جایگزین کن
 import requests
-from bs4 import BeautifulSoup
+import json
 
 query = "python tutorial"
-url = f"https://html.duckduckgo.com/html/?q={query.replace(' ', '+')}"
+url = f"https://serpapi.com/search.json?engine=google&q={query}&api_key=demo"
 
-headers = {"User-Agent": "Mozilla/5.0"}
-response = requests.get(url, headers=headers)
-soup = BeautifulSoup(response.text, "html.parser")
+response = requests.get(url)
+data = response.json()
 
 results = []
-for result in soup.select('.result__title a')[:5]:
-    title = result.get_text()
-    link = result.get('href')
-    results.append(f"{title}\n{link}\n{'-'*50}")
+for result in data.get('organic_results', [])[:5]:
+    results.append(f"عنوان: {result['title']}")
+    results.append(f"لینک: {result['link']}")
+    results.append("-" * 50)
 
-content = f"نتایج سرچ: {query}\n\n" + "\n".join(results)
+content = f"نتایج گوگل: {query}\n\n" + "\n".join(results)
 
-with open("search_results.txt", "w", encoding="utf-8") as f:
+with open("google_results.txt", "w", encoding="utf-8") as f:
     f.write(content)
 
-print("search_results.txt OK!")
+print("✅ google_results.txt ذخیره شد!")
