@@ -21,18 +21,12 @@ jobs:
         run: python apper.py
 
       - name: Show output.txt content
-        run: cat output.txt
+        run: |
+          echo "محتوای فایل:"
+          cat output.txt
 
       - name: Upload output.txt as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: output-file
           path: output.txt
-
-      - name: Commit and Push output.txt
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add output.txt
-          git diff --staged --quiet || git commit -m "Add output.txt [skip ci]"
-          git push
