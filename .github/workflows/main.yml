@@ -1,19 +1,18 @@
-name: Create TXT
+name: Create TXT File
 on: [push]
 jobs:
-  test:
+  create:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
         python-version: 3.x
+    - run: pip install requests  # optional
     - run: python apper.py
-    - run: |
-        git config user.name "GitHub"
-        git config user.email "action@github.com"
-        git add google_results.txt
-        git commit -m "Add results" || exit 0
-        git push
+    - name: Show file
+      run: cat google_results.txt
+    - uses: actions/upload-artifact@v4
+      with:
+        name: google-results
+        path: google_results.txt
