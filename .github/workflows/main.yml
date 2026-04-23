@@ -1,4 +1,4 @@
-name: Create & Search TXT
+name: Search & Save TXT
 
 on:
   push:
@@ -27,12 +27,14 @@ jobs:
         run: python apper.py
 
       - name: Show result
-        run: cat google_results.txt
+        run: |
+          echo "=== محتوای فایل ==="
+          cat search_results.txt
 
       - name: Commit result
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add google_results.txt
-          git commit -m "Add google_results.txt [skip ci]" || echo "No changes"
+          git add search_results.txt
+          git commit -m "Add search results [skip ci]" || echo "No changes"
           git push
