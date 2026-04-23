@@ -1,4 +1,4 @@
-name: Create & Commit TXT
+name: Create & Search TXT
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: write  # 👈 این مهمه!
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -20,16 +20,19 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
       - name: Run apper.py
         run: python apper.py
 
-      - name: Show output.txt
-        run: cat output.txt
+      - name: Show result
+        run: cat google_results.txt
 
-      - name: Commit output.txt
+      - name: Commit result
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add output.txt
-          git commit -m "Add output.txt [skip ci]" || echo "No changes"
+          git add google_results.txt
+          git commit -m "Add google_results.txt [skip ci]" || echo "No changes"
           git push
