@@ -1,11 +1,11 @@
-name: Test & Commit TXT to Repo
+name: Google Search Results
 on: [push, pull_request]
 
 permissions:
-  contents: write  # اجازه commit
+  contents: write
 
 jobs:
-  test:
+  search:
     runs-on: ubuntu-latest
     
     steps:
@@ -21,30 +21,46 @@ jobs:
     - name: Install Playwright
       run: npm init -y && npm i -D @playwright/test@latest && npx playwright install --with-deps
     
-    - name: Google Test + TXT
+    - name: Google "سلام" + Save Results
       run: |
-        cat > test.js << 'EOF'
+        cat > search.js << 'EOF'
         const { chromium } = require('playwright');
         (async () => {
-          const browser = await chromium.launch();
+          const browser = await chromium.launch({ headless: true });
           const page = await browser.newPage();
-          await page.goto('https://google.com');
-          console.log('✅ Google بارگذاری شد');
+          await page.goto('https://www.google.com');
+          
+          // سرچ "سلام"
           await page.fill('textarea[name="q"]', 'سلام');
-          console.log('✅ سلام تایپ شد');
-          const title = await page.title();
-          console.log('📄 عنوان: ' + title);
+          await page.press('textarea[name="q"]', 'Enter');
+          await page.waitForLoadState('networkidle');
+          
+          // نتایج
+          const results = await page.$$eval('.g', elements => 
+            elements.slice(0, 5).map(el => ({
+              title: el.querySelector('h3')?.innerText || 'No title',
+              link: el.querySelector('a')?.href || 'No link',
+              snippet: el.querySelector('.VwiC3b')?.innerText || 'No snippet'
+            }))
+          );
+          
+          let output = '🔍 نتایج سرچ "سلام":\n\n';
+          results.forEach((r, i) => {
+            output += `${i+1}. ${r.title}\n   ${r.link}\n   ${r.snippet}\n\n`;
+          });
+          
           await browser.close();
-          console.log('🎉 تست تمام!');
+          require('fs').writeFileSync('google-salams.txt', output);
+          console.log('✅ نتایج ذخیره شد!');
         })();
         EOF
         
-        node test.js > test-results.txt 2>&1
-        
-    - name: Commit test-results.txt to repo
+        node search.js
+    
+    - name: Commit results to repo
       run: |
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git add test-results.txt
-        git commit -m "Add test-results.txt (سلام test)" || echo "No changes"
+        git add google-salams.txt
+        git commit -m "نتایج سرچ سلام" || echo "No changes"
         git push
