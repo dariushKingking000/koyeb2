@@ -1,4 +1,4 @@
-name: Create TXT
+name: Create & Commit TXT
 
 on:
   push:
@@ -7,6 +7,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # 👈 این مهمه!
 
     steps:
       - name: Checkout repository
@@ -20,13 +23,13 @@ jobs:
       - name: Run apper.py
         run: python apper.py
 
-      - name: Show output.txt content
-        run: |
-          echo "محتوای فایل:"
-          cat output.txt
+      - name: Show output.txt
+        run: cat output.txt
 
-      - name: Upload output.txt as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: output-file
-          path: output.txt
+      - name: Commit output.txt
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add output.txt
+          git commit -m "Add output.txt [skip ci]" || echo "No changes"
+          git push
