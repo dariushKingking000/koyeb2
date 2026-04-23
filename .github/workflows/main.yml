@@ -1,40 +1,19 @@
-name: Search & Save TXT
-
-on:
-  push:
-    branches: [ main ]
-
+name: Create TXT
+on: [push]
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-
     permissions:
       contents: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install dependencies
-        run: pip install requests beautifulsoup4
-
-      - name: Run apper.py
-        run: python apper.py
-
-      - name: Show result
-        run: |
-          echo "=== محتوای فایل ==="
-          cat search_results.txt
-
-      - name: Commit result
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add google_results.txt
-          git commit -m "Add search results [skip ci]" || echo "No changes"
-          git push
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: 3.x
+    - run: python apper.py
+    - run: |
+        git config user.name "GitHub"
+        git config user.email "action@github.com"
+        git add google_results.txt
+        git commit -m "Add results" || exit 0
+        git push
