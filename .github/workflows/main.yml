@@ -1,15 +1,9 @@
 name: E2E Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    
     strategy:
       matrix:
         project: [chromium, firefox, webkit]
@@ -17,44 +11,23 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    # تولید package-lock.json
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
         cache: 'npm'
     
-    - name: Install dependencies
+    - name: Install deps & Playwright
       run: |
-        npm init -y
-        npm install @playwright/test@^1.41.0
-        npm install --save-dev @playwright/test
+        npm ci
+        npx playwright install --with-deps ${{ matrix.project }}
     
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps ${{ matrix.project }}
-    
-    - name: Create test file
-      run: |
-        mkdir -p tests
-        cat > tests/example.spec.js << 'EOF'
-        const { test, expect } = require('@playwright/test');
-        test('basic test', async ({ page }) => {
-          await page.goto('https://example.com');
-          await expect(page).toHaveTitle(/Example Domain/);
-        });
-        EOF
-    
-    - name: Run Playwright Tests
+    - name: Run tests
       run: npx playwright test --project=${{ matrix.project }}
     
-    - name: Generate report
-      if: always()
-      run: npx playwright show-report
-    
-    - name: Upload Playwright report
+    - name: Upload report
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: playwright-report-${{ matrix.project }}
+        name: report-${{ matrix.project }}
         path: playwright-report/
-        retention-days: 30
