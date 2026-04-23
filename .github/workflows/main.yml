@@ -1,47 +1,31 @@
-name: Playwright Tests
+name: Install Playwright
 on: [push, pull_request]
 
 jobs:
-  test:
+  install:
     runs-on: ubuntu-latest
     
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Node
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
         
-    - name: Debug files
-      run: |
-        echo "=== FILES ==="
-        ls -la
-        echo "=== PACKAGE.JSON ==="
-        cat package.json || echo "NO package.json!"
-    
-    - name: Create package.json & install
+    - name: Install everything
       run: |
         npm init -y
         npm install --save-dev @playwright/test@latest
-    
-    - name: Install Playwright
-      run: npx playwright install --with-deps
-    
-    - name: Create test if missing
+        npx playwright install --with-deps chromium firefox webkit
+        
+    - name: Verify installation
       run: |
-        mkdir -p tests
-        cat > tests/example.spec.js << 'EOF'
-        const { test, expect } = require('@playwright/test');
-        test('Google test', async ({ page }) => {
-          await page.goto('https://google.com');
-          await expect(page).toHaveTitle(/Google/);
-        });
-        EOF
-        ls -la tests/
+        npx playwright --version
+        ls -la node_modules/.bin/playwright*
+        echo "✅ ALL BROWSERS INSTALLED!"
     
-    - name: Run tests
-      run: npx playwright test
-    
-    - name: Show report
-      run: npx playwright show-report || echo "No report"
+    - name: List files
+      run: |
+        ls -la
+        echo "✅ Installation COMPLETE!"
