@@ -1,11 +1,11 @@
-name: Google Search Results
+name: Google سلام Screenshot
 on: [push, pull_request]
 
 permissions:
   contents: write
 
 jobs:
-  search:
+  screenshot:
     runs-on: ubuntu-latest
     
     steps:
@@ -21,46 +21,42 @@ jobs:
     - name: Install Playwright
       run: npm init -y && npm i -D @playwright/test@latest && npx playwright install --with-deps
     
-    - name: Google "سلام" + Save Results
+    - name: Google "سلام" + Screenshot
       run: |
-        cat > search.js << 'EOF'
+        cat > screenshot.js << 'EOF'
         const { chromium } = require('playwright');
         (async () => {
-          const browser = await chromium.launch({ headless: true });
+          const browser = await chromium.launch({ headless: false });
           const page = await browser.newPage();
+          await page.setViewportSize({ width: 1920, height: 1080 });
+          
+          console.log('🌐 Google...');
           await page.goto('https://www.google.com');
           
-          // سرچ "سلام"
+          console.log('🔍 تایپ سلام...');
           await page.fill('textarea[name="q"]', 'سلام');
           await page.press('textarea[name="q"]', 'Enter');
+          
+          console.log('⏳ منتظر نتایج...');
           await page.waitForLoadState('networkidle');
           
-          // نتایج
-          const results = await page.$$eval('.g', elements => 
-            elements.slice(0, 5).map(el => ({
-              title: el.querySelector('h3')?.innerText || 'No title',
-              link: el.querySelector('a')?.href || 'No link',
-              snippet: el.querySelector('.VwiC3b')?.innerText || 'No snippet'
-            }))
-          );
-          
-          let output = '🔍 نتایج سرچ "سلام":\n\n';
-          results.forEach((r, i) => {
-            output += `${i+1}. ${r.title}\n   ${r.link}\n   ${r.snippet}\n\n`;
+          console.log('📸 اسکرین‌شات...');
+          await page.screenshot({ 
+            path: 'google-salams-full.png', 
+            fullPage: true 
           });
           
           await browser.close();
-          require('fs').writeFileSync('google-salams.txt', output);
-          console.log('✅ نتایج ذخیره شد!');
+          console.log('✅ google-salams-full.png ذخیره شد!');
         })();
         EOF
         
-        node search.js
+        node screenshot.js
     
-    - name: Commit results to repo
+    - name: Commit screenshot to repo
       run: |
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git add google-salams.txt
-        git commit -m "نتایج سرچ سلام" || echo "No changes"
+        git add google-salams-full.png
+        git commit -m "اسکرین‌شات سرچ سلام" || echo "No changes"
         git push
