@@ -1,11 +1,11 @@
-name: Google Debug & Screenshot
+name: Google Screenshot
 on: [push, pull_request]
 
 permissions:
   contents: write
 
 jobs:
-  test:
+  screenshot:
     runs-on: ubuntu-latest
     
     steps:
@@ -13,66 +13,13 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-        cache: 'npm'
+    - name: Run Screenshot
+      run: node test-screenshot.js
     
-    - name: Install deps
+    - name: Commit result
       run: |
-        npm init -y
-        npm i playwright@latest
-        npx playwright install chromium --with-deps
-    
-    - name: Test Google سلام
-      run: |
-        cat > test.js << EOF
-        const { chromium } = require('playwright');
-        (async () => {
-          try {
-            const browser = await chromium.launch({ 
-              headless: true,
-              args: ['--no-sandbox']
-            });
-            const page = await browser.newPage({ 
-              viewport: { width: 1400, height: 900 }
-            });
-            
-            console.log('1. Google باز...');
-            await page.goto('https://google.com');
-            
-            console.log('2. تایپ سلام...');
-            await page.waitForSelector('textarea[name="q"]', { timeout: 10000 });
-            await page.fill('textarea[name="q"]', 'سلام');
-            await page.keyboard.press('Enter');
-            
-            console.log('3. منتظر نتایج...');
-            await page.waitForSelector('div#search', { timeout: 20000 });
-            
-            console.log('4. اسکرین‌شات...');
-            await page.screenshot({ path: 'salam-search.png', fullPage: true });
-            
-            await browser.close();
-            console.log('✅ salam-search.png آماده!');
-          } catch (error) {
-            console.error('❌ خطا:', error.message);
-            process.exit(1);
-          }
-        })();
-EOF
-        node test.js
-    
-    - name: Show file & commit
-      run: |
-        ls -la *.png || echo "No PNG"
-        du -h *.png || echo "No PNG"
-        git config user.name "GitHub Bot"
-        git config user.email "bot@github.com"
-        git add salam-search.png
-        if [ -f salam-search.png ]; then
-          git commit -m "اسکرین‌شات سرچ سلام ✅"
-          git push
-        else
-          echo "❌ PNG ساخته نشد"
-        fi
+        git config user.name "Actions"
+        git config user.email "actions@github.com"
+        git add salam.png
+        git commit -m "اسکرین‌شات سرچ" || exit 0
+        git push
