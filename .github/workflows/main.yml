@@ -1,11 +1,11 @@
-name: Google Screenshot
-on: [push, pull_request]
+name: Logs + Screenshot
+on: [push]
 
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  capture:
     runs-on: ubuntu-latest
     
     steps:
@@ -13,13 +13,48 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Run Screenshot
-      run: node test-screenshot.js
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
     
-    - name: Commit result
+    - name: Run & Save Logs
+      run: |
+        # تمام لاگ‌ها
+        echo "=== شروع ===" > workflow-logs.txt
+        date >> workflow-logs.txt
+        
+        # تست
+        npm init -y >> workflow-logs.txt 2>&1
+        npm i playwright >> workflow-logs.txt 2>&1
+        npx playwright install chromium >> workflow-logs.txt 2>&1
+        
+        # اسکرین‌شات
+        cat > test.js << 'EOF'
+        const { chromium } = require('playwright');
+        console.log('تست شروع');
+        (async () => {
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage();
+          await page.goto('https://google.com');
+          await page.fill('textarea[name="q"]','سلام');
+          await page.press('textarea[name="q"]','Enter');
+          await page.waitForTimeout(5000);
+          await page.screenshot({path:'salam.png',fullPage:true});
+          await browser.close();
+          console.log('✅ تمام');
+        })();
+EOF
+        
+        node test.js >> workflow-logs.txt 2>&1
+        
+        # فایل‌ها
+        ls -la >> workflow-logs.txt
+        du -h *.png >> workflow-logs.txt 2>&1 || echo "PNG نیست" >> workflow-logs.txt
+    
+    - name: Commit everything
       run: |
         git config user.name "Actions"
         git config user.email "actions@github.com"
-        git add salam.png
-        git commit -m "اسکرین‌شات سرچ" || exit 0
+        git add workflow-logs.txt salam.png
+        git commit -m "لاگ کامل + PNG" || exit 0
         git push
