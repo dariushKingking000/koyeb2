@@ -1,56 +1,48 @@
-name: Ultra Simple Debug
+name: Fix YAML
 on: [push]
-permissions: { contents: write }
+permissions:
+  contents: write
 
 jobs:
-  debug:
+  screenshot:
     runs-on: ubuntu-latest
     steps:
-    - name: ALL IN ONE
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+    
+    - name: Install
+      run: npm init -y && npm i playwright && npx playwright install chromium
+    
+    - name: Screenshot
       run: |
-        # کلون
-        git clone https://github.com/${{ github.repository }} . --depth=1
-        
-        # Node
-        curl -fsSL https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xJ
-        export PATH="$PWD/node-v20.11.1-linux-x64/bin:$PATH"
-        
-        # Playwright
-        npm init -y
-        npm i playwright@1.44.0
-        npx playwright install chromium --with-deps
-        
-        # تست
         cat > test.js << 'EOF'
         const { chromium } = require('playwright');
-        (async function() {
-          try {
-            const browser = await chromium.launch({headless: true});
-            const page = await browser.newPage();
-            await page.goto('https://google.com');
-            await page.fill('textarea[name="q"]', 'سلام');
-            await page.press('textarea[name="q"]', 'Enter');
-            await page.waitForTimeout(3000);
-            await page.screenshot({path: 'salam.png', fullPage: true});
-            await browser.close();
-            console.log('✅ SALAM.PNG SAVED!');
-          } catch(e) {
-            console.error('❌ ERROR:', e.message);
-            process.exit(1);
-          }
-        })();
-EOF
+        (async () => {
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage();
+          await page.goto('https://google.com');
+          await page.fill('textarea[name="q"]', 'سلام');
+          await page.press('textarea[name="q"]', 'Enter');
+          await page.waitForTimeout(3000);
+          await page.screenshot({path: 'salam.png', fullPage: true});
+          await browser.close();
+          console.log('✅ سلام.png');
+        })().catch(console.error);
+        EOF
         
         node test.js
         
-        # لاگ + فایل‌ها
-        echo "=== LOGS ===" > debug.txt
-        ls -la >> debug.txt
-        du -h salam.png >> debug.txt 2>&1 || echo "NO PNG" >> debug.txt
-        
-        # Commit
-        git config user.name "GitHub Actions"
+        ls -la *.png
+    
+    - name: Commit
+      run: |
+        git config user.name "Actions"
         git config user.email "actions@github.com"
-        git add salam.png debug.txt
-        git commit -m "Add salam.png + debug" || echo "No commit needed"
-        git push https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+        git add salam.png
+        git commit -m "Add salam.png" || exit 0
+        git push
