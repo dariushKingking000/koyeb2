@@ -1,66 +1,78 @@
-name: Google Screenshot Fixed
+name: Google Debug & Screenshot
 on: [push, pull_request]
 
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     
     steps:
     - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Setup Node
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
-        
-    - name: Install Playwright
-      run: npm init -y && npm i -D @playwright/test@latest && npx playwright install --with-deps
+        cache: 'npm'
     
-    - name: Screenshot Google "سلام"
+    - name: Install deps
       run: |
-        npx playwright run --no-deps << 'EOF'
+        npm init -y
+        npm i playwright@latest
+        npx playwright install chromium --with-deps
+    
+    - name: Test Google سلام
+      run: |
+        cat > test.js << EOF
         const { chromium } = require('playwright');
         (async () => {
-          const browser = await chromium.launch({ 
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
-          const context = await browser.newContext({
-            viewport: { width: 1920, height: 1080 }
-          });
-          const page = await context.newPage();
-          
-          await page.goto('https://www.google.com', { 
-            waitUntil: 'networkidle',
-            timeout: 30000 
-          });
-          
-          await page.fill('textarea[name="q"]', 'سلام', { timeout: 10000 });
-          await page.press('textarea[name="q"]', 'Enter');
-          
-          await page.waitForSelector('.g', { timeout: 15000 });
-          
-          await page.screenshot({ 
-            path: 'google-salams.png', 
-            fullPage: true 
-          });
-          
-          await browser.close();
-          console.log('✅ google-salams.png OK!');
+          try {
+            const browser = await chromium.launch({ 
+              headless: true,
+              args: ['--no-sandbox']
+            });
+            const page = await browser.newPage({ 
+              viewport: { width: 1400, height: 900 }
+            });
+            
+            console.log('1. Google باز...');
+            await page.goto('https://google.com');
+            
+            console.log('2. تایپ سلام...');
+            await page.waitForSelector('textarea[name="q"]', { timeout: 10000 });
+            await page.fill('textarea[name="q"]', 'سلام');
+            await page.keyboard.press('Enter');
+            
+            console.log('3. منتظر نتایج...');
+            await page.waitForSelector('div#search', { timeout: 20000 });
+            
+            console.log('4. اسکرین‌شات...');
+            await page.screenshot({ path: 'salam-search.png', fullPage: true });
+            
+            await browser.close();
+            console.log('✅ salam-search.png آماده!');
+          } catch (error) {
+            console.error('❌ خطا:', error.message);
+            process.exit(1);
+          }
         })();
-        EOF
+EOF
+        node test.js
     
-    - name: Commit image
+    - name: Show file & commit
       run: |
-        ls -la google-salams.png
-        git config user.name "Actions"
-        git config user.email "actions@github.com"
-        git add google-salams.png
-        git commit -m "Google سلام screenshot" || echo "No image"
-        git push
+        ls -la *.png || echo "No PNG"
+        du -h *.png || echo "No PNG"
+        git config user.name "GitHub Bot"
+        git config user.email "bot@github.com"
+        git add salam-search.png
+        if [ -f salam-search.png ]; then
+          git commit -m "اسکرین‌شات سرچ سلام ✅"
+          git push
+        else
+          echo "❌ PNG ساخته نشد"
+        fi
