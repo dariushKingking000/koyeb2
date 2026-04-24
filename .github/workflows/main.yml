@@ -1,4 +1,4 @@
-name: Google سلام Screenshot
+name: Google Screenshot Fixed
 on: [push, pull_request]
 
 permissions:
@@ -7,6 +7,7 @@ permissions:
 jobs:
   screenshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
     - uses: actions/checkout@v4
@@ -21,42 +22,45 @@ jobs:
     - name: Install Playwright
       run: npm init -y && npm i -D @playwright/test@latest && npx playwright install --with-deps
     
-    - name: Google "سلام" + Screenshot
+    - name: Screenshot Google "سلام"
       run: |
-        cat > screenshot.js << 'EOF'
+        npx playwright run --no-deps << 'EOF'
         const { chromium } = require('playwright');
         (async () => {
-          const browser = await chromium.launch({ headless: false });
-          const page = await browser.newPage();
-          await page.setViewportSize({ width: 1920, height: 1080 });
+          const browser = await chromium.launch({ 
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+          const context = await browser.newContext({
+            viewport: { width: 1920, height: 1080 }
+          });
+          const page = await context.newPage();
           
-          console.log('🌐 Google...');
-          await page.goto('https://www.google.com');
+          await page.goto('https://www.google.com', { 
+            waitUntil: 'networkidle',
+            timeout: 30000 
+          });
           
-          console.log('🔍 تایپ سلام...');
-          await page.fill('textarea[name="q"]', 'سلام');
+          await page.fill('textarea[name="q"]', 'سلام', { timeout: 10000 });
           await page.press('textarea[name="q"]', 'Enter');
           
-          console.log('⏳ منتظر نتایج...');
-          await page.waitForLoadState('networkidle');
+          await page.waitForSelector('.g', { timeout: 15000 });
           
-          console.log('📸 اسکرین‌شات...');
           await page.screenshot({ 
-            path: 'google-salams-full.png', 
+            path: 'google-salams.png', 
             fullPage: true 
           });
           
           await browser.close();
-          console.log('✅ google-salams-full.png ذخیره شد!');
+          console.log('✅ google-salams.png OK!');
         })();
         EOF
-        
-        node screenshot.js
     
-    - name: Commit screenshot to repo
+    - name: Commit image
       run: |
-        git config user.name "GitHub Actions"
+        ls -la google-salams.png
+        git config user.name "Actions"
         git config user.email "actions@github.com"
-        git add google-salams-full.png
-        git commit -m "اسکرین‌شات سرچ سلام" || echo "No changes"
+        git add google-salams.png
+        git commit -m "Google سلام screenshot" || echo "No image"
         git push
