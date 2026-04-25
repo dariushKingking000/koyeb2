@@ -15,20 +15,20 @@ jobs:
       with:
         node-version: 20
     
-    - name: Chrome + Small Red Circle + 10s Wait
+    - name: Chrome + Tiny Red Dot + 10s Wait
       run: |
         npm init -y &>/dev/null
         npm i playwright canvas &>/dev/null
         npx playwright install chromium &>/dev/null
         
-        cat > final-screenshot.js << 'EOF'
+        cat > tiny-dot.js << 'EOF'
         const { chromium } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
         
         const CLICK_X = 134;
         const CLICK_Y = 165;
-        const RADIUS = 1; // دایره کوچکتر
+        const RADIUS = 1; // نقطه ریز قرمز
         
         (async () => {
           const browser = await chromium.launch({headless: true});
@@ -39,18 +39,14 @@ jobs:
           await page.press('textarea[name="q"]', 'Enter');
           await page.waitForTimeout(3000);
           
-          // کلیک
           await page.mouse.click(CLICK_X, CLICK_Y);
           await page.waitForTimeout(3000);
           
-          // صبر 10 ثانیه برای تغییرات
-          console.log('⏳ صبر 10 ثانیه...');
+          console.log('⏳ 10s wait...');
           await page.waitForTimeout(10000);
           
-          // screenshot نهایی
           await page.screenshot({path: 'final.png', fullPage: true});
           
-          // دایره قرمز کوچیک
           const img = await loadImage('final.png');
           const canvas = createCanvas(img.width, img.height);
           const ctx = canvas.getContext('2d');
@@ -58,16 +54,17 @@ jobs:
           ctx.drawImage(img, 0, 0);
           ctx.beginPath();
           ctx.arc(CLICK_X, CLICK_Y, RADIUS, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(255,0,0,0.6)';
+          ctx.fillStyle = '#ff0000';
           ctx.fill();
           ctx.strokeStyle = '#ff0000';
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 2;
           ctx.stroke();
           
-          fs.writeFileSync('chrome-final.png', canvas.toBuffer('image/png'));
+          fs.writeFileSync('chrome-dot.png', canvas.toBuffer('image/png'));
           
           fs.writeFileSync('chrome-state.json', JSON.stringify({
             click: [CLICK_X, CLICK_Y],
+            radius: RADIUS,
             wait: '10s',
             title: await page.title(),
             url: page.url(),
@@ -78,13 +75,13 @@ jobs:
         })().catch(console.error);
         EOF
         
-        node final-screenshot.js
+        node tiny-dot.js
     
     - uses: actions/upload-artifact@v4
       with:
-        name: chrome-10s-final
+        name: chrome-tiny-dot
         path: |
-          chrome-final.png
+          chrome-dot.png
           chrome-state.json
     
     - name: Commit
@@ -92,6 +89,6 @@ jobs:
       run: |
         git config --global user.name "Actions"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add chrome-final.png chrome-state.json || true
-        git commit -m "Final screenshot after 10s + small red circle" || true
+        git add chrome-dot.png chrome-state.json || true
+        git commit -m "Tiny red dot (r=1) after 10s" || true
         git push || true
