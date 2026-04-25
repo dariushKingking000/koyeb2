@@ -15,19 +15,20 @@ jobs:
       with:
         node-version: 20
     
-    - name: Chrome + Red Circle on Click
+    - name: Chrome + Small Red Circle + 10s Wait
       run: |
         npm init -y &>/dev/null
         npm i playwright canvas &>/dev/null
         npx playwright install chromium &>/dev/null
         
-        cat > click-highlight.js << 'EOF'
+        cat > final-screenshot.js << 'EOF'
         const { chromium } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
         
         const CLICK_X = 134;
         const CLICK_Y = 165;
+        const RADIUS = 12; // دایره کوچکتر
         
         (async () => {
           const browser = await chromium.launch({headless: true});
@@ -42,28 +43,32 @@ jobs:
           await page.mouse.click(CLICK_X, CLICK_Y);
           await page.waitForTimeout(3000);
           
-          // screenshot اصلی
-          await page.screenshot({path: 'base.png'});
+          // صبر 10 ثانیه برای تغییرات
+          console.log('⏳ صبر 10 ثانیه...');
+          await page.waitForTimeout(10000);
           
-          // دایره قرمز
-          const img = await loadImage('base.png');
+          // screenshot نهایی
+          await page.screenshot({path: 'final.png', fullPage: true});
+          
+          // دایره قرمز کوچیک
+          const img = await loadImage('final.png');
           const canvas = createCanvas(img.width, img.height);
           const ctx = canvas.getContext('2d');
           
           ctx.drawImage(img, 0, 0);
           ctx.beginPath();
-          ctx.arc(CLICK_X, CLICK_Y, 25, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(255,0,0,0.5)';
+          ctx.arc(CLICK_X, CLICK_Y, RADIUS, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(255,0,0,0.6)';
           ctx.fill();
           ctx.strokeStyle = '#ff0000';
-          ctx.lineWidth = 4;
+          ctx.lineWidth = 3;
           ctx.stroke();
           
-          fs.writeFileSync('chrome-highlight.png', canvas.toBuffer('image/png'));
+          fs.writeFileSync('chrome-final.png', canvas.toBuffer('image/png'));
           
-          // state
           fs.writeFileSync('chrome-state.json', JSON.stringify({
             click: [CLICK_X, CLICK_Y],
+            wait: '10s',
             title: await page.title(),
             url: page.url(),
             time: new Date().toISOString()
@@ -73,20 +78,20 @@ jobs:
         })().catch(console.error);
         EOF
         
-        node click-highlight.js
+        node final-screenshot.js
     
     - uses: actions/upload-artifact@v4
       with:
-        name: chrome-red-click
+        name: chrome-10s-final
         path: |
-          chrome-highlight.png
+          chrome-final.png
           chrome-state.json
     
-    - name: Simple Commit
+    - name: Commit
       if: always()
       run: |
         git config --global user.name "Actions"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add chrome-highlight.png chrome-state.json || true
-        git commit -m "Red circle on click (134,165)" || true
+        git add chrome-final.png chrome-state.json || true
+        git commit -m "Final screenshot after 10s + small red circle" || true
         git push || true
