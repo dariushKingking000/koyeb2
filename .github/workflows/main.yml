@@ -28,7 +28,7 @@ jobs:
         
         const CLICK_X = 134;
         const CLICK_Y = 165;
-        const RADIUS = 12; // دایره کوچکتر
+        const RADIUS = 1; // دایره کوچکتر
         
         (async () => {
           const browser = await chromium.launch({headless: true});
