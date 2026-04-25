@@ -9,86 +9,84 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}$
+        token: ${{ secrets.GITHUB_TOKEN }}
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Chrome Headless + Click + Red Highlight
+    - name: Chrome + Red Circle on Click
       run: |
         npm init -y &>/dev/null
-        npm i playwright@1.41.0 pixelmatch pngjs canvas &>/dev/null
+        npm i playwright canvas &>/dev/null
         npx playwright install chromium &>/dev/null
         
-        cat > highlight.js << 'EOF'
-        $const { chromium } = require('playwright')$;
-        $const { createCanvas, loadImage } = require('canvas')$;
-        $const fs = require('fs')$;
+        cat > click-highlight.js << 'EOF'
+        const { chromium } = require('playwright');
+        const { createCanvas, loadImage } = require('canvas');
+        const fs = require('fs');
         
-        $const CLICK_X = 134$;
-        $const CLICK_Y = 165$;
-        $const RADIUS = 20; //$ شعاع دایره قرمز
+        const CLICK_X = 134;
+        const CLICK_Y = 165;
         
-        $(async () => {$
-          $const browser = await chromium.launch({headless: true})$;
-          $const page = await browser.newPage()$;
+        (async () => {
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage();
           
-          $await page.goto('https://google.com')$;
-          $await page.fill('textarea[name="q"]', '$سلام');
-          $await page.press('textarea[name="q"]', 'Enter')$;
-          $await page.waitForTimeout(3000)$;
+          await page.goto('https://google.com');
+          await page.fill('textarea[name="q"]', 'سلام');
+          await page.press('textarea[name="q"]', 'Enter');
+          await page.waitForTimeout(3000);
           
           // کلیک
-          $await page.mouse.click(CLICK_X, CLICK_Y)$;
-          $await page.waitForTimeout(3000)$;
+          await page.mouse.click(CLICK_X, CLICK_Y);
+          await page.waitForTimeout(3000);
           
           // screenshot اصلی
-          $await page.screenshot({path: 'screenshot.png', fullPage: true})$;
+          await page.screenshot({path: 'base.png'});
           
-          // اضافه کردن دایره قرمز
-          $const img = await loadImage('screenshot.png')$;
-          $const canvas = createCanvas(img.width, img.height)$;
-          $const ctx = canvas.getContext('2d')$;
+          // دایره قرمز
+          const img = await loadImage('base.png');
+          const canvas = createCanvas(img.width, img.height);
+          const ctx = canvas.getContext('2d');
           
-          $ctx.drawImage(img, 0, 0)$;
-          $ctx.beginPath()$;
-          $ctx.arc(CLICK_X, CLICK_Y, RADIUS, 0, 2 * Math.PI)$;
-          $ctx.fillStyle = 'rgba(255, 0, 0, 0.4)'$;
-          $ctx.fill()$;
-          $ctx.strokeStyle = 'red'$;
-          $ctx.lineWidth = 3$;
-          $ctx.stroke()$;
+          ctx.drawImage(img, 0, 0);
+          ctx.beginPath();
+          ctx.arc(CLICK_X, CLICK_Y, 25, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(255,0,0,0.5)';
+          ctx.fill();
+          ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth = 4;
+          ctx.stroke();
           
-          $const highlighted = canvas.toBuffer('image/png')$;
-          $fs.writeFileSync('chrome-highlight.png', highlighted)$;
+          fs.writeFileSync('chrome-highlight.png', canvas.toBuffer('image/png'));
           
           // state
-          $fs.writeFileSync('chrome-state.json', JSON.stringify({$
-            $click: {x: CLICK_X, y: CLICK_Y},$
-            $title: await page.title(),$
-            $url: page.url(),$
-            $time: new Date().toISOString()$
-          $}, null, 2))$;
+          fs.writeFileSync('chrome-state.json', JSON.stringify({
+            click: [CLICK_X, CLICK_Y],
+            title: await page.title(),
+            url: page.url(),
+            time: new Date().toISOString()
+          }, null, 2));
           
-          $await browser.close()$;
-          $console.log(`✅ chrome-highlight.png ($قرمز: {CLICK_X},${CLICK_Y})`);
+          await browser.close();
         })().catch(console.error);
         EOF
         
-        node highlight.js
+        node click-highlight.js
     
     - uses: actions/upload-artifact@v4
       with:
-        name: chrome-red-highlight
+        name: chrome-red-click
         path: |
           chrome-highlight.png
           chrome-state.json
     
-    - name: Push to repo
+    - name: Simple Commit
+      if: always()
       run: |
-        git config user.name "Actions"
-        git config user.email "actions@github.com"
+        git config --global user.name "Actions"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add chrome-highlight.png chrome-state.json || true
-        git commit -m "Chrome: red highlight on click (134,165)" || exit 0
-        git push || exit 0
+        git commit -m "Red circle on click (134,165)" || true
+        git push || true
