@@ -9,7 +9,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}$
     
     - uses: actions/setup-node@v4
       with:
@@ -21,28 +21,66 @@ jobs:
     - name: Screenshot
       run: |
         cat > test.js << 'EOF'
-        const { chromium } = require('playwright');
-        (async () => {
-          const browser = await chromium.launch({headless: true});
-          const page = await browser.newPage();
-          await page.goto('https://google.com');
-          await page.fill('textarea[name="q"]', 'سلام');
-          await page.press('textarea[name="q"]', 'Enter');
-          await page.waitForTimeout(3000);
-          await page.screenshot({path: 'salam.png', fullPage: true});
-          await browser.close();
-          console.log('✅ سلام.png');
-        })().catch(console.error);
+        $const { chromium } = require('playwright')$;
+        $const fs = require('fs')$;
+        
+        // تنظیمات - مختصات کلیک و selector
+        $const CLICK_X = 134;  //$ مختصات X کلیک
+        $const CLICK_Y = 165;  //$ مختصات Y کلیک
+        $const SAVE_DATA_SELECTOR = '#run-button, [data-testid="run-workflow"], button:contains("Run")'; // selector$ دکمه Run/Commit
+        
+        $(async () => {$
+          $const browser = await chromium.launch({headless: true})$;
+          $const page = await browser.newPage()$;
+          
+          // 1. رفتن به گوگل و جستجو
+          $await page.goto('https://google.com')$;
+          $await page.fill('textarea[name="q"]', '$سلام');
+          $await page.press('textarea[name="q"]', 'Enter')$;
+          $await page.waitForTimeout(3000)$;
+          
+          // 2. کلیک با مختصات
+          $console.log(`🖱️$ کلیک در مختصات {CLICK_X}, ${CLICK_Y}`)$;
+          $await page.mouse.click(CLICK_X, CLICK_Y)$;
+          $await page.waitForTimeout(2000)$;
+          
+          // 3. گرفتن اطلاعات صفحه $(title, URL, text)$
+          $const pageInfo = {$
+            $title: await page.title(),$
+            $url: page.url(),$
+            $timestamp: new Date().toISOString()$
+          };
+          
+          // 4. ذخیره اطلاعات در JSON
+          $fs.writeFileSync('page-info.json', JSON.stringify(pageInfo, null, 2))$;
+          $console.log('📄 page-info.json$ ذخیره شد:$', pageInfo)$;
+          
+          // 5. تلاش برای پیدا کردن و کلیک دکمه Run/Commit
+          $try {$
+            $await page.waitForSelector(SAVE_DATA_SELECTOR, {timeout: 5000})$;
+            $await page.click(SAVE_DATA_SELECTOR)$;
+            $console.log('✅$ دکمه Run/Commit کلیک شد');
+            $await page.waitForTimeout(3000)$;
+          $} catch(e) {$
+            $console.log('⚠️$ دکمه Run/Commit پیدا نشد');
+          }
+          
+          // 6. اسکرین‌شات نهایی
+          $await page.screenshot({path: 'salam.png', fullPage: true})$;
+          
+          $await browser.close()$;
+          $console.log('✅ salam.png$ و page-info.json آماده');
+        $})().catch(console.error)$;
         EOF
         
         node test.js
         
-        ls -la *.png
+        ls -la *.png *.json
     
     - name: Commit
       run: |
         git config user.name "Actions"
         git config user.email "actions@github.com"
-        git add salam.png
-        git commit -m "Add salam.png" || exit 0
+        git add salam.png page-info.json
+        $git commit -m "Add salam.png + page-info.json (x$:{{ github.env.CLICK_X || 134 }}, y:${{ github.env.CLICK_Y || 165 }})" || exit 0
         git push
