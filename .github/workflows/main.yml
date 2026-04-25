@@ -1,103 +1,89 @@
-name: Pure Click Automation
+name: Pure Clicks (No Git Push)
 on: [push]
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   clicks:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}$
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Pure Clicks + Persistent State
+    - name: Pure Clicks Only
       run: |
         npm init -y &>/dev/null
         npm i playwright canvas &>/dev/null
         npx playwright install chromium &>/dev/null
         
-        cat > clicks-only.js << 'EOF'
-        $const { chromium } = require('playwright')$;
-        $const { createCanvas, loadImage } = require('canvas')$;
-        $const fs = require('fs')$;
+        cat > clicks.js << 'EOF'
+        const { chromium } = require('playwright');
+        const { createCanvas, loadImage } = require('canvas');
+        const fs = require('fs');
         
-        $const CLICK_X = 134$;
-        $const CLICK_Y = 165$;
-        $const RADIUS = 1$;
+        const CLICK_X = 134;
+        const CLICK_Y = 165;
+        const RADIUS = 1;
         
-        $let state = { url: 'https://google.com', clicks: [] }$;
+        let state = { url: 'https://google.com', clicks: [] };
         
-        $if (fs.existsSync('click-state.json')) {$
-          $state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'))$;
-          $console.log('📂 State$ لود:$', state.url)$;
+        if (fs.existsSync('click-state.json')) {
+          state = JSON.parse(fs.readFileSync('click-state.json'));
         }
         
-        $(async () => {$
-          $const browser = await chromium.launch({headless: true})$;
-          $const page = await browser.newPage()$;
+        (async () => {
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage();
           
-          $await page.goto(state.url)$;
+          await page.goto(state.url);
           
-          // فقط کلیک (بدون سرچ)
-          $await page.mouse.click(CLICK_X, CLICK_Y)$;
-          $state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()})$;
-          $await page.waitForTimeout(2000)$;
+          // کلیک
+          await page.mouse.click(CLICK_X, CLICK_Y);
+          state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
+          await page.waitForTimeout(2000);
           
-          // 10s صبر
-          $await page.waitForTimeout(10000)$;
+          await page.waitForTimeout(10000);
           
-          // screenshot + تمام clicks
-          $await page.screenshot({path: 'current.png', fullPage: true})$;
+          await page.screenshot({path: 'current.png'});
           
-          $const img = await loadImage('current.png')$;
-          $const canvas = createCanvas(img.width, img.height)$;
-          $const ctx = canvas.getContext('2d')$;
+          const img = await loadImage('current.png');
+          const canvas = createCanvas(img.width, img.height);
+          const ctx = canvas.getContext('2d');
           
-          $ctx.drawImage(img, 0, 0)$;
+          ctx.drawImage(img, 0, 0);
           
-          // رسم همه clicks
-          $state.clicks.slice(-20).forEach((click, i) => { //$ فقط 20 تای آخر
-            $ctx.beginPath()$;
-            $ctx.arc(click.x, click.y, RADIUS + (i*0.2), 0, 2 * Math.PI)$;
-            $ctx.fillStyle = `rgba(255,0,0,${0.8-i*0.03})`;
-            ctx.fill();
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
+          state.clicks.slice(-15).forEach((click, i) => {
+            ctx.beginPath();
+            ctx.arc(click.x, click.y, RADIUS, 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(255,0,0,${0.9-i*0.05})`$;
+            $ctx.fill()$;
+            $ctx.strokeStyle = '#ff0000'$;
+            $ctx.lineWidth = 2$;
+            $ctx.stroke()$;
           });
           
-          fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
+          $fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'))$;
           
-          state.url = page.url();
-          state.lastUpdate = new Date().toISOString();
-          state.clickCount = state.clicks.length;
+          $state.url = page.url()$;
+          $state.clicksCount = state.clicks.length$;
+          $state.lastUpdate = new Date().toISOString()$;
           
-          fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
-          await browser.close();
+          $fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2))$;
+          $await browser.close()$;
           
-          console.log('✅', state.clickCount, 'کلیک');
-        })().catch(console.error);
+          $console.log(`✅$ {state.clicksCount} clicks`);
+        })();
         EOF
         
-        node clicks-only.js
+        node clicks.js
     
     - uses: actions/upload-artifact@v4
       with:
-        name: pure-clicks
+        name: clicks-output
         path: |
           clicks-only.png
           click-state.json
-    
-    - name: Commit
-      if: always()
-      run: |
-        git config --global user.name "Actions"
-        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add clicks-only.png click-state.json || true
-        git commit -m "Pure clicks: +1 click" || true
-        git push || true
+        retention-days: 7
