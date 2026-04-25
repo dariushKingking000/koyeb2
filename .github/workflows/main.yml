@@ -1,4 +1,4 @@
-name: Pure Clicks Fixed
+name: Pure Clicks - Direct Root Save
 on: [push]
 permissions:
   contents: read
@@ -8,15 +8,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        path: repo  # repo در subfolder
     
-    - name: Setup Node & Playwright
+    - name: Generate Files in Root
       run: |
+        # Playwright نصب
         npm init -y
         npm i playwright canvas
         npx playwright install chromium
-    
-    - name: Pure Click Automation
-      run: |
+        
+        # JS کد
         cat > clicks.js << 'EOF'
         const { chromium } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
@@ -28,6 +30,7 @@ jobs:
         let state = { url: 'https://google.com', clicks: [] };
         if (fs.existsSync('click-state.json')) {
           state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'));
+          console.log('State loaded:', state.clicks.length, 'clicks');
         }
         
         (async () => {
@@ -36,9 +39,9 @@ jobs:
           
           await page.goto(state.url);
           await page.mouse.click(CLICK_X, CLICK_Y);
-          state.clicks.push({x: CLICK_X, y: CLICK_Y});
+          state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
           
-          await page.waitForTimeout(12000);
+          await page.waitForTimeout(10000);
           
           await page.screenshot({path: 'current.png', fullPage: true});
           
@@ -48,10 +51,10 @@ jobs:
           
           ctx.drawImage(img, 0, 0);
           
-          state.clicks.slice(-10).forEach(click => {
+          state.clicks.slice(-10).forEach((click, i) => {
             ctx.beginPath();
             ctx.arc(click.x, click.y, 2, 0, 2 * Math.PI);
-            ctx.fillStyle = '#ff4444';
+            ctx.fillStyle = '#ff0000';
             ctx.fill();
             ctx.strokeStyle = '#ff0000';
             ctx.lineWidth = 3;
@@ -59,22 +62,21 @@ jobs:
           });
           
           fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
-          
-          state.url = page.url();
-          state.clicksCount = state.clicks.length;
-          
           fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
           
-          console.log(`✅ ${state.clicksCount} clicks at ${state.url}`);
+          console.log(`✅ ${state.clicks.length} clicks saved! URL: ${state.url}`);
           await browser.close();
-        })().catch(e => console.error('Error:', e.message));
+        })().catch(console.error);
         EOF
         
         node clicks.js
+        
+        ls -la clicks-only.png click-state.json current.png
     
-    - uses: actions/upload-artifact@v4
+    - name: Upload to Root-like Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: clicks-files
+        name: root-files
         path: |
           clicks-only.png
           click-state.json
