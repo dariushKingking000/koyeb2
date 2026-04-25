@@ -9,19 +9,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        cache: 'npm'
-    
-    - name: Install & Run
-      id: create
+    - name: Create Files FIRST
       run: |
-        npm init -y
-        npm install playwright canvas
-        npx playwright install --with-deps chromium
-        
         cat > clicks.js << 'EOF'
         const { chromium } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
@@ -35,7 +24,7 @@ jobs:
           if (fs.existsSync('click-state.json')) {
             state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'));
           }
-        } catch(e) { console.log('No state file'); }
+        } catch(e) { }
         
         (async () => {
           const browser = await chromium.launch({headless: true});
@@ -45,7 +34,7 @@ jobs:
           await page.mouse.click(CLICK_X, CLICK_Y);
           state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
           
-          await page.waitForTimeout(10000);
+          await page.waitForTimeout(5000);
           await page.screenshot({path: 'clicks-only.png', fullPage: true});
           
           const img = await loadImage('clicks-only.png');
@@ -74,16 +63,28 @@ jobs:
           await browser.close();
         })().catch(e => console.log('Error:', e.message));
         EOF
-        
+
+    - name: Setup Node & Install
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: package-lock.json
+    
+    - name: Install & Run
+      id: create
+      run: |
+        npm install playwright canvas
+        npx playwright install --with-deps chromium
         node clicks.js
         
         FILE_COUNT=$(ls clicks-only.png click-state.json 2>/dev/null | wc -l)$
         $echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT$
-        echo "Files created: FILE_COUNT"
+        echo "Files: FILE_COUNT"
 
     - name: Commit Files
       uses: EndBug/add-and-commit@v9
       if: steps.create.outputs.file_count > 0
       with:
-        add: 'clicks-only.png click-state.json'
-        message: "🤖 Update clicks (${{ steps.create.outputs.file_count }} files)"
+        add: 'clicks-only.png click-state.json clicks.js'
+        message: "🤖 Clicks: ${{ steps.create.outputs.file_count }} files"
