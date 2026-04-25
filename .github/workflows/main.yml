@@ -9,12 +9,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Create Files in Repo Root
+    - name: Setup Node & Install
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Create & Run Script
       id: create
       run: |
         npm init -y >/dev/null 2>&1
-        npm i playwright canvas >/dev/null 2>&1
-        npx playwright install chromium --with-deps >/dev/null 2>&1
+        npm i -D playwright canvas >/dev/null 2>&1
         
         cat > clicks.js << 'EOF'
         const { chromium } = require('playwright');
@@ -36,18 +41,15 @@ jobs:
           const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
           
           await page.goto(state.url, {waitUntil: 'networkidle'});
-          
           await page.mouse.click(CLICK_X, CLICK_Y);
           state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
           
           await page.waitForTimeout(10000);
-          
           await page.screenshot({path: 'clicks-only.png', fullPage: true});
           
           const img = await loadImage('clicks-only.png');
           const canvas = createCanvas(img.width, img.height);
           const ctx = canvas.getContext('2d');
-          
           ctx.drawImage(img, 0, 0);
           
           state.clicks.slice(-8).forEach((click, i) => {
@@ -63,7 +65,6 @@ jobs:
           });
           
           fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
-          
           state.url = page.url();
           state.count = state.clicks.length;
           fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
@@ -73,16 +74,16 @@ jobs:
         })().catch(e => console.log('Error:', e.message));
         EOF
         
+        npx playwright install --with-deps chromium
         node clicks.js
         
         FILE_COUNT=$(ls clicks-only.png click-state.json 2>/dev/null | wc -l)$
         $echo "file_count=$FILE_COUNT" >> $GITHUB_OUTPUT$
-        echo "Files created: FILE_COUNT"
-        ls -la clicks-only.png click-state.json 2>/dev/null || echo "No files"
+        echo "Files: FILE_COUNT"
 
-    - name: Commit and Push Files
+    - name: Commit Files
       uses: EndBug/add-and-commit@v9
       if: steps.create.outputs.file_count > 0
       with:
         add: 'clicks-only.png click-state.json'
-        message: "🤖 Update clicks: ${{ steps.create.outputs.file_count }} files (${{ github.sha }})"
+        message: "🤖 Clicks updated: ${{ steps.create.outputs.file_count }} files"
