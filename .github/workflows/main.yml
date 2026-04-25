@@ -1,4 +1,4 @@
-name: Pure Clicks - Working Auth
+name: Pure Clicks - Chrome State
 on: [push]
 permissions:
   contents: write
@@ -31,8 +31,8 @@ jobs:
         
         let state = { url: 'https://google.com', clicks: [] };
         try {
-          if (fs.existsSync('click-state.json')) {
-            state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'));
+          if (fs.existsSync('chrome-state.json')) {
+            state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
           }
         } catch(e) { }
         
@@ -67,7 +67,7 @@ jobs:
           fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
           state.url = page.url();
           state.count = state.clicks.length;
-          fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
+          fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
           
           console.log(`✅ ${state.count} clicks - ${state.url}`);
           await browser.close();
@@ -79,5 +79,5 @@ jobs:
     - name: Commit Files
       uses: EndBug/add-and-commit@v10
       with:
-        add: 'clicks-only.png click-state.json'
-        message: "🤖 Update clicks files"
+        add: 'clicks-only.png chrome-state.json'
+        message: "🤖 Update chrome clicks files"
