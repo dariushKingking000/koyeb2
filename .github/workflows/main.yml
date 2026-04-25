@@ -1,94 +1,103 @@
-name: Chrome Automation
+name: Pure Click Automation
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  chrome:
+  clicks:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}$
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Chrome + Tiny Red Dot + 10s Wait
+    - name: Pure Clicks + Persistent State
       run: |
         npm init -y &>/dev/null
         npm i playwright canvas &>/dev/null
         npx playwright install chromium &>/dev/null
         
-        cat > tiny-dot.js << 'EOF'
-        const { chromium } = require('playwright');
-        const { createCanvas, loadImage } = require('canvas');
-        const fs = require('fs');
+        cat > clicks-only.js << 'EOF'
+        $const { chromium } = require('playwright')$;
+        $const { createCanvas, loadImage } = require('canvas')$;
+        $const fs = require('fs')$;
         
-        const CLICK_X = 134;
-        const CLICK_Y = 165;
-        const RADIUS = 1; // نقطه ریز قرمز
+        $const CLICK_X = 134$;
+        $const CLICK_Y = 165$;
+        $const RADIUS = 1$;
         
-        (async () => {
-          const browser = await chromium.launch({headless: true});
-          const page = await browser.newPage();
+        $let state = { url: 'https://google.com', clicks: [] }$;
+        
+        $if (fs.existsSync('click-state.json')) {$
+          $state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'))$;
+          $console.log('📂 State$ لود:$', state.url)$;
+        }
+        
+        $(async () => {$
+          $const browser = await chromium.launch({headless: true})$;
+          $const page = await browser.newPage()$;
           
-          await page.goto('https://google.com');
-          await page.fill('textarea[name="q"]', 'سلام');
-          await page.press('textarea[name="q"]', 'Enter');
-          await page.waitForTimeout(3000);
+          $await page.goto(state.url)$;
           
-          await page.mouse.click(CLICK_X, CLICK_Y);
-          await page.waitForTimeout(3000);
+          // فقط کلیک (بدون سرچ)
+          $await page.mouse.click(CLICK_X, CLICK_Y)$;
+          $state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()})$;
+          $await page.waitForTimeout(2000)$;
           
-          console.log('⏳ 10s wait...');
-          await page.waitForTimeout(10000);
+          // 10s صبر
+          $await page.waitForTimeout(10000)$;
           
-          await page.screenshot({path: 'final.png', fullPage: true});
+          // screenshot + تمام clicks
+          $await page.screenshot({path: 'current.png', fullPage: true})$;
           
-          const img = await loadImage('final.png');
-          const canvas = createCanvas(img.width, img.height);
-          const ctx = canvas.getContext('2d');
+          $const img = await loadImage('current.png')$;
+          $const canvas = createCanvas(img.width, img.height)$;
+          $const ctx = canvas.getContext('2d')$;
           
-          ctx.drawImage(img, 0, 0);
-          ctx.beginPath();
-          ctx.arc(CLICK_X, CLICK_Y, RADIUS, 0, 2 * Math.PI);
-          ctx.fillStyle = '#ff0000';
-          ctx.fill();
-          ctx.strokeStyle = '#ff0000';
-          ctx.lineWidth = 2;
-          ctx.stroke();
+          $ctx.drawImage(img, 0, 0)$;
           
-          fs.writeFileSync('chrome-dot.png', canvas.toBuffer('image/png'));
+          // رسم همه clicks
+          $state.clicks.slice(-20).forEach((click, i) => { //$ فقط 20 تای آخر
+            $ctx.beginPath()$;
+            $ctx.arc(click.x, click.y, RADIUS + (i*0.2), 0, 2 * Math.PI)$;
+            $ctx.fillStyle = `rgba(255,0,0,${0.8-i*0.03})`;
+            ctx.fill();
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          });
           
-          fs.writeFileSync('chrome-state.json', JSON.stringify({
-            click: [CLICK_X, CLICK_Y],
-            radius: RADIUS,
-            wait: '10s',
-            title: await page.title(),
-            url: page.url(),
-            time: new Date().toISOString()
-          }, null, 2));
+          fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
           
+          state.url = page.url();
+          state.lastUpdate = new Date().toISOString();
+          state.clickCount = state.clicks.length;
+          
+          fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
           await browser.close();
+          
+          console.log('✅', state.clickCount, 'کلیک');
         })().catch(console.error);
         EOF
         
-        node tiny-dot.js
+        node clicks-only.js
     
     - uses: actions/upload-artifact@v4
       with:
-        name: chrome-tiny-dot
+        name: pure-clicks
         path: |
-          chrome-dot.png
-          chrome-state.json
+          clicks-only.png
+          click-state.json
     
     - name: Commit
       if: always()
       run: |
         git config --global user.name "Actions"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add chrome-dot.png chrome-state.json || true
-        git commit -m "Tiny red dot (r=1) after 10s" || true
+        git add clicks-only.png click-state.json || true
+        git commit -m "Pure clicks: +1 click" || true
         git push || true
