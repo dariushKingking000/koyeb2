@@ -1,4 +1,4 @@
-name: Pure Clicks (No Git Push)
+name: Pure Clicks Fixed
 on: [push]
 permissions:
   contents: read
@@ -9,16 +9,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Pure Clicks Only
+    - name: Setup Node & Playwright
       run: |
-        npm init -y &>/dev/null
-        npm i playwright canvas &>/dev/null
-        npx playwright install chromium &>/dev/null
-        
+        npm init -y
+        npm i playwright canvas
+        npx playwright install chromium
+    
+    - name: Pure Click Automation
+      run: |
         cat > clicks.js << 'EOF'
         const { chromium } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
@@ -26,12 +24,10 @@ jobs:
         
         const CLICK_X = 134;
         const CLICK_Y = 165;
-        const RADIUS = 1;
         
         let state = { url: 'https://google.com', clicks: [] };
-        
         if (fs.existsSync('click-state.json')) {
-          state = JSON.parse(fs.readFileSync('click-state.json'));
+          state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'));
         }
         
         (async () => {
@@ -39,15 +35,12 @@ jobs:
           const page = await browser.newPage();
           
           await page.goto(state.url);
-          
-          // کلیک
           await page.mouse.click(CLICK_X, CLICK_Y);
-          state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
-          await page.waitForTimeout(2000);
+          state.clicks.push({x: CLICK_X, y: CLICK_Y});
           
-          await page.waitForTimeout(10000);
+          await page.waitForTimeout(12000);
           
-          await page.screenshot({path: 'current.png'});
+          await page.screenshot({path: 'current.png', fullPage: true});
           
           const img = await loadImage('current.png');
           const canvas = createCanvas(img.width, img.height);
@@ -55,35 +48,34 @@ jobs:
           
           ctx.drawImage(img, 0, 0);
           
-          state.clicks.slice(-15).forEach((click, i) => {
+          state.clicks.slice(-10).forEach(click => {
             ctx.beginPath();
-            ctx.arc(click.x, click.y, RADIUS, 0, 2 * Math.PI);
-            ctx.fillStyle = `rgba(255,0,0,${0.9-i*0.05})`$;
-            $ctx.fill()$;
-            $ctx.strokeStyle = '#ff0000'$;
-            $ctx.lineWidth = 2$;
-            $ctx.stroke()$;
+            ctx.arc(click.x, click.y, 2, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ff4444';
+            ctx.fill();
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 3;
+            ctx.stroke();
           });
           
-          $fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'))$;
+          fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
           
-          $state.url = page.url()$;
-          $state.clicksCount = state.clicks.length$;
-          $state.lastUpdate = new Date().toISOString()$;
+          state.url = page.url();
+          state.clicksCount = state.clicks.length;
           
-          $fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2))$;
-          $await browser.close()$;
+          fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
           
-          $console.log(`✅$ {state.clicksCount} clicks`);
-        })();
+          console.log(`✅ ${state.clicksCount} clicks at ${state.url}`);
+          await browser.close();
+        })().catch(e => console.error('Error:', e.message));
         EOF
         
         node clicks.js
     
     - uses: actions/upload-artifact@v4
       with:
-        name: clicks-output
+        name: clicks-files
         path: |
           clicks-only.png
           click-state.json
-        retention-days: 7
+          current.png
