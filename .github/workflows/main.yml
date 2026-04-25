@@ -10,6 +10,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}$
+        fetch-depth: 0
     
     - uses: actions/setup-node@v4
       with:
@@ -24,63 +25,47 @@ jobs:
         $const { chromium } = require('playwright')$;
         $const fs = require('fs')$;
         
-        // تنظیمات - مختصات کلیک و selector
-        $const CLICK_X = 134;  //$ مختصات X کلیک
-        $const CLICK_Y = 165;  //$ مختصات Y کلیک
-        $const SAVE_DATA_SELECTOR = '#run-button, [data-testid="run-workflow"], button:contains("Run")'; // selector$ دکمه Run/Commit
+        $const CLICK_X = 134$;
+        $const CLICK_Y = 165$;
         
         $(async () => {$
           $const browser = await chromium.launch({headless: true})$;
           $const page = await browser.newPage()$;
           
-          // 1. رفتن به گوگل و جستجو
           $await page.goto('https://google.com')$;
           $await page.fill('textarea[name="q"]', '$سلام');
           $await page.press('textarea[name="q"]', 'Enter')$;
           $await page.waitForTimeout(3000)$;
           
-          // 2. کلیک با مختصات
-          $console.log(`🖱️$ کلیک در مختصات {CLICK_X}, ${CLICK_Y}`)$;
+          // کلیک با مختصات
+          $console.log(`🖱️$ کلیک: {CLICK_X}, ${CLICK_Y}`)$;
           $await page.mouse.click(CLICK_X, CLICK_Y)$;
-          $await page.waitForTimeout(2000)$;
+          $await page.waitForTimeout(3000)$;
           
-          // 3. گرفتن اطلاعات صفحه $(title, URL, text)$
-          $const pageInfo = {$
+          // ذخیره اطلاعات صفحه
+          $const info = {$
             $title: await page.title(),$
             $url: page.url(),$
             $timestamp: new Date().toISOString()$
           };
+          $fs.writeFileSync('chrome-state.json', JSON.stringify(info, null, 2))$;
           
-          // 4. ذخیره اطلاعات در JSON
-          $fs.writeFileSync('page-info.json', JSON.stringify(pageInfo, null, 2))$;
-          $console.log('📄 page-info.json$ ذخیره شد:$', pageInfo)$;
-          
-          // 5. تلاش برای پیدا کردن و کلیک دکمه Run/Commit
-          $try {$
-            $await page.waitForSelector(SAVE_DATA_SELECTOR, {timeout: 5000})$;
-            $await page.click(SAVE_DATA_SELECTOR)$;
-            $console.log('✅$ دکمه Run/Commit کلیک شد');
-            $await page.waitForTimeout(3000)$;
-          $} catch(e) {$
-            $console.log('⚠️$ دکمه Run/Commit پیدا نشد');
-          }
-          
-          // 6. اسکرین‌شات نهایی
-          $await page.screenshot({path: 'salam.png', fullPage: true})$;
+          // اسکرین‌شات
+          $await page.screenshot({path: 'chrome.png', fullPage: true})$;
           
           $await browser.close()$;
-          $console.log('✅ salam.png$ و page-info.json آماده');
+          $console.log('✅ chrome.png + chrome-state.json')$;
         $})().catch(console.error)$;
         EOF
         
         node test.js
-        
         ls -la *.png *.json
     
-    - name: Commit
+    - name: Commit Files
       run: |
-        git config user.name "Actions"
-        git config user.email "actions@github.com"
-        git add salam.png page-info.json
-        $git commit -m "Add salam.png + page-info.json (x$:{{ github.env.CLICK_X || 134 }}, y:${{ github.env.CLICK_Y || 165 }})" || exit 0
-        git push
+        $git config user.name "github-actions[bot]"$
+        $git config user.email "41898282+github-actions[bot]@users.noreply.github.com"$
+        git remote set-url origin https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        git add chrome.png chrome-state.json || true
+        git commit -m "Update chrome.png + state" || exit 0
+        git push || exit 0
