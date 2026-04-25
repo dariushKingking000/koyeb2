@@ -1,4 +1,4 @@
-name: Pure Clicks - Fix Auth
+name: Pure Clicks - Working Auth
 on: [push]
 permissions:
   contents: write
@@ -8,81 +8,76 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}$
-        fetch-depth: 0
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
     - name: Install
-      run: npm init -y && npm i playwright canvas && npx playwright install --with-deps chromium
+      run: |
+        npm init -y
+        npm i playwright canvas
+        npx playwright install --with-deps chromium
     
-    - name: Clicks Script
+    - name: Generate Clicks
       run: |
         cat > clicks.js << 'EOF'
-        $const { chromium } = require('playwright')$;
-        $const { createCanvas, loadImage } = require('canvas')$;
-        $const fs = require('fs')$;
+        const { chromium } = require('playwright');
+        const { createCanvas, loadImage } = require('canvas');
+        const fs = require('fs');
         
-        $const CLICK_X = 134$;
-        $const CLICK_Y = 165$;
+        const CLICK_X = 134;
+        const CLICK_Y = 165;
         
-        $let state = { url: 'https://google.com', clicks: [] }$;
-        $try {$
-          $if (fs.existsSync('click-state.json')) {$
-            $state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'))$;
+        let state = { url: 'https://google.com', clicks: [] };
+        try {
+          if (fs.existsSync('click-state.json')) {
+            state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'));
           }
-        $} catch(e) { }$
+        } catch(e) { }
         
-        $(async () => {$
-          $const browser = await chromium.launch({headless: true})$;
-          $const page = await browser.newPage({viewport: {width: 1920, height: 1080}})$;
+        (async () => {
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
           
-          $await page.goto(state.url, {waitUntil: 'networkidle'})$;
-          $await page.mouse.click(CLICK_X, CLICK_Y)$;
-          $state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()})$;
+          await page.goto(state.url, {waitUntil: 'networkidle'});
+          await page.mouse.click(CLICK_X, CLICK_Y);
+          state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
           
-          $await page.waitForTimeout(5000)$;
-          $await page.screenshot({path: 'clicks-only.png', fullPage: true})$;
+          await page.waitForTimeout(5000);
+          await page.screenshot({path: 'clicks-only.png', fullPage: true});
           
-          $const img = await loadImage('clicks-only.png')$;
-          $const canvas = createCanvas(img.width, img.height)$;
-          $const ctx = canvas.getContext('2d')$;
-          $ctx.drawImage(img, 0, 0)$;
+          const img = await loadImage('clicks-only.png');
+          const canvas = createCanvas(img.width, img.height);
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
           
-          $state.clicks.slice(-8).forEach((click, i) => {$
-            $ctx.beginPath()$;
-            $ctx.arc(click.x, click.y, 3, 0, 2 * Math.PI)$;
-            $ctx.fillStyle = '#ff0000'$;
-            $ctx.globalAlpha = 0.8 - i*0.1$;
-            $ctx.fill()$;
-            $ctx.globalAlpha = 1$;
-            $ctx.strokeStyle = '#ff4444'$;
-            $ctx.lineWidth = 2$;
-            $ctx.stroke()$;
+          state.clicks.slice(-8).forEach((click, i) => {
+            ctx.beginPath();
+            ctx.arc(click.x, click.y, 3, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ff0000';
+            ctx.globalAlpha = 0.8 - i*0.1;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = '#ff4444';
+            ctx.lineWidth = 2;
+            ctx.stroke();
           });
           
-          $fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'))$;
-          $state.url = page.url()$;
-          $state.count = state.clicks.length$;
-          $fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2))$;
+          fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
+          state.url = page.url();
+          state.count = state.clicks.length;
+          fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
           
-          $console.log(`✅$ {state.count} clicks - ${state.url}`)$;
-          $await browser.close()$;
-        $})().catch(console.error)$;
+          console.log(`✅ ${state.count} clicks - ${state.url}`);
+          await browser.close();
+        })().catch(console.error);
         EOF
         
         node clicks.js
-        
-        ls -la clicks-only.png click-state.json
     
-    - name: Commit & Push
-      run: |
-        $git config --global user.name "github-actions[bot]"$
-        $git config --global user.email "github-actions[bot]@users.noreply.github.com"$
-        git remote set-url origin https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git$
-        git add clicks-only.png click-state.json 2>/dev/null || true
-        $git diff --staged --quiet || git commit -m "🤖 Update clicks ($(ls *.png *.json 2>/dev/null | wc -l) files)"
-        git push || true
+    - name: Commit Files
+      uses: EndBug/add-and-commit@v10
+      with:
+        add: 'clicks-only.png click-state.json'
+        message: "🤖 Update clicks files"
