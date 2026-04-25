@@ -1,71 +1,69 @@
-name: Fix YAML
+name: Chrome Automation
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  chrome:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}$
-        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install
-      run: npm init -y && npm i playwright && npx playwright install chromium
-    
-    - name: Screenshot
+    - name: Chrome Headless + Click
       run: |
-        cat > test.js << 'EOF'
-        $const { chromium } = require('playwright')$;
-        $const fs = require('fs')$;
+        npm init -y &>/dev/null
+        npm i playwright &>/dev/null
+        npx playwright install chromium &>/dev/null
         
-        $const CLICK_X = 134$;
-        $const CLICK_Y = 165$;
+        cat > run.js << 'EOF'
+        const { chromium } = require('playwright');
+        const fs = require('fs');
         
-        $(async () => {$
-          $const browser = await chromium.launch({headless: true})$;
-          $const page = await browser.newPage()$;
+        (async () => {
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage();
           
-          $await page.goto('https://google.com')$;
-          $await page.fill('textarea[name="q"]', '$سلام');
-          $await page.press('textarea[name="q"]', 'Enter')$;
-          $await page.waitForTimeout(3000)$;
+          await page.goto('https://google.com');
+          await page.fill('textarea[name="q"]', 'سلام');
+          await page.press('textarea[name="q"]', 'Enter');
+          await page.waitForTimeout(3000);
           
-          // کلیک با مختصات
-          $console.log(`🖱️$ کلیک: {CLICK_X}, ${CLICK_Y}`)$;
-          $await page.mouse.click(CLICK_X, CLICK_Y)$;
-          $await page.waitForTimeout(3000)$;
+          // کلیک 134,165
+          await page.mouse.click(134, 165);
+          await page.waitForTimeout(3000);
           
-          // ذخیره اطلاعات صفحه
-          $const info = {$
-            $title: await page.title(),$
-            $url: page.url(),$
-            $timestamp: new Date().toISOString()$
-          };
-          $fs.writeFileSync('chrome-state.json', JSON.stringify(info, null, 2))$;
+          // ذخیره state
+          fs.writeFileSync('chrome-state.json', JSON.stringify({
+            title: await page.title(),
+            url: page.url(),
+            clicked: true,
+            time: new Date().toISOString()
+          }, null, 2));
           
-          // اسکرین‌شات
-          $await page.screenshot({path: 'chrome.png', fullPage: true})$;
-          
-          $await browser.close()$;
-          $console.log('✅ chrome.png + chrome-state.json')$;
-        $})().catch(console.error)$;
+          await page.screenshot({path: 'chrome-screenshot.png', fullPage: true});
+          await browser.close();
+        })().catch(console.error);
         EOF
         
-        node test.js
-        ls -la *.png *.json
+        node run.js
     
-    - name: Commit Files
+    - uses: actions/upload-artifact@v4
+      with:
+        name: chrome-output
+        path: |
+          chrome-screenshot.png
+          chrome-state.json
+    
+    - name: Push to main
       run: |
-        $git config user.name "github-actions[bot]"$
-        $git config user.email "41898282+github-actions[bot]@users.noreply.github.com"$
-        git remote set-url origin https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-        git add chrome.png chrome-state.json || true
-        git commit -m "Update chrome.png + state" || exit 0
+        git config user.name "Actions"
+        git config user.email "actions@github.com"
+        git add chrome-screenshot.png chrome-state.json || true
+        git commit -m "Chrome: screenshot + state (134,165)" || exit 0
         git push || exit 0
