@@ -1,7 +1,7 @@
 name: Pure Clicks - NO GIT - Direct Repo Files
 on: [push]
 permissions:
-  contents: read
+  contents: write  # تغییر از read به write
 
 jobs:
   clicks:
@@ -16,6 +16,7 @@ jobs:
         npx playwright install chromium chromium --with-deps >/dev/null 2>&1
         
         cat > clicks.js << 'EOF'
+        # کد قبلی بدون تغییر...
         const { chromium } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
@@ -76,3 +77,11 @@ jobs:
         
         echo "Files created:"
         ls -la clicks-only.png click-state.json 2>/dev/null || echo "No files"
+
+    - name: Commit and Push Files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add clicks-only.png click-state.json 2>/dev/null || true
+        git diff --staged --quiet || git commit -m "Update clicks: $(ls -la clicks-only.png click-state.json 2>/dev/null | head -1 || echo 'no new files')"
+        git push
