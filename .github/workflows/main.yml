@@ -1,4 +1,4 @@
-name: Pure Clicks - Chrome State Match
+name: Edge Clicks - No Chrome
 on: [push]
 permissions:
   contents: write
@@ -13,16 +13,16 @@ jobs:
       with:
         node-version: 20
     
-    - name: Install
+    - name: Install Edge
       run: |
         npm init -y
         npm i playwright canvas
-        npx playwright install --with-deps chromium
+        npx playwright install --with-deps msedge
     
     - name: Generate Clicks
       run: |
         cat > clicks.js << 'EOF'
-        const { chromium } = require('playwright');
+        const { webkit } = require('playwright'); // Safari-like (closest to Firefox)
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
         
@@ -31,17 +31,17 @@ jobs:
           if (fs.existsSync('chrome-state.json')) {
             state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
           } else {
-            state = { click: [1, 1], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
+            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Start', url: 'https://www.mozilla.org/' };
           }
         } catch(e) { 
-          state = { click: [1, 1], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
+          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Start', url: 'https://www.mozilla.org/' };
         }
         
         const [CLICK_X, CLICK_Y] = state.click;
         const WAIT_MS = state.wait === '10s' ? 10000 : 5000;
         
         (async () => {
-          const browser = await chromium.launch({headless: true});
+          const browser = await webkit.launch({headless: true});
           const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
           
           await page.goto(state.url, {waitUntil: 'networkidle'});
@@ -72,7 +72,7 @@ jobs:
           state.time = new Date().toISOString();
           
           fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
-          console.log(`✅ Click ${CLICK_X},${CLICK_Y} - ${state.title}`);
+          console.log(`✅ Firefox-like click ${CLICK_X},${CLICK_Y} - ${state.title}`);
           await browser.close();
         })().catch(console.error);
         EOF
@@ -83,4 +83,4 @@ jobs:
       uses: EndBug/add-and-commit@v10
       with:
         add: 'clicks-only.png chrome-state.json'
-        message: "🤖 Chrome click update"
+        message: "🤖 Firefox clicks update"
