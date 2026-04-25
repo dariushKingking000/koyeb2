@@ -1,4 +1,4 @@
-name: Pure Clicks - Working Auth
+name: Pure Clicks - Chrome State Match
 on: [push]
 permissions:
   contents: write
@@ -26,15 +26,19 @@ jobs:
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
         
-        const CLICK_X = 134;
-        const CLICK_Y = 165;
-        
-        let state = { url: 'https://google.com', clicks: [] };
+        let state;
         try {
           if (fs.existsSync('chrome-state.json')) {
             state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
+          } else {
+            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
           }
-        } catch(e) { }
+        } catch(e) { 
+          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
+        }
+        
+        const [CLICK_X, CLICK_Y] = state.click;
+        const WAIT_MS = state.wait === '10s' ? 10000 : 5000;
         
         (async () => {
           const browser = await chromium.launch({headless: true});
@@ -42,9 +46,8 @@ jobs:
           
           await page.goto(state.url, {waitUntil: 'networkidle'});
           await page.mouse.click(CLICK_X, CLICK_Y);
-          state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
           
-          await page.waitForTimeout(5000);
+          await page.waitForTimeout(WAIT_MS);
           await page.screenshot({path: 'clicks-only.png', fullPage: true});
           
           const img = await loadImage('clicks-only.png');
@@ -52,24 +55,24 @@ jobs:
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
           
-          state.clicks.slice(-8).forEach((click, i) => {
-            ctx.beginPath();
-            ctx.arc(click.x, click.y, 3, 0, 2 * Math.PI);
-            ctx.fillStyle = '#ff0000';
-            ctx.globalAlpha = 0.8 - i*0.1;
-            ctx.fill();
-            ctx.globalAlpha = 1;
-            ctx.strokeStyle = '#ff4444';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-          });
+          ctx.beginPath();
+          ctx.arc(CLICK_X, CLICK_Y, state.radius * 3, 0, 2 * Math.PI);
+          ctx.fillStyle = '#ff0000';
+          ctx.globalAlpha = 0.7;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = '#ff4444';
+          ctx.lineWidth = 2;
+          ctx.stroke();
           
           fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
-          state.url = page.url();
-          state.count = state.clicks.length;
-          fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
           
-          console.log(`✅ ${state.count} clicks - ${state.url}`);
+          state.title = await page.title();
+          state.url = page.url();
+          state.time = new Date().toISOString();
+          
+          fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
+          console.log(`✅ Click ${CLICK_X},${CLICK_Y} - ${state.title}`);
           await browser.close();
         })().catch(console.error);
         EOF
@@ -80,4 +83,4 @@ jobs:
       uses: EndBug/add-and-commit@v10
       with:
         add: 'clicks-only.png chrome-state.json'
-        message: "🤖 Update clicks files"
+        message: "🤖 Chrome click update"
