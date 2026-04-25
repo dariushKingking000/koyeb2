@@ -1,4 +1,4 @@
-name: Edge Clicks - No Chrome
+name: Firefox Clicks
 on: [push]
 permissions:
   contents: write
@@ -13,16 +13,16 @@ jobs:
       with:
         node-version: 20
     
-    - name: Install Edge
+    - name: Install Firefox
       run: |
         npm init -y
         npm i playwright canvas
-        npx playwright install --with-deps msedge
+        npx playwright install --with-deps firefox
     
     - name: Generate Clicks
       run: |
         cat > clicks.js << 'EOF'
-        const { webkit } = require('playwright'); // Safari-like (closest to Firefox)
+        const { firefox } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
         
@@ -31,26 +31,26 @@ jobs:
           if (fs.existsSync('chrome-state.json')) {
             state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
           } else {
-            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Start', url: 'https://www.mozilla.org/' };
+            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/' };
           }
         } catch(e) { 
-          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Start', url: 'https://www.mozilla.org/' };
+          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/' };
         }
         
         const [CLICK_X, CLICK_Y] = state.click;
         const WAIT_MS = state.wait === '10s' ? 10000 : 5000;
         
         (async () => {
-          const browser = await webkit.launch({headless: true});
+          const browser = await firefox.launch({headless: true});
           const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
           
           await page.goto(state.url, {waitUntil: 'networkidle'});
           await page.mouse.click(CLICK_X, CLICK_Y);
           
           await page.waitForTimeout(WAIT_MS);
-          await page.screenshot({path: 'clicks-only.png', fullPage: true});
+          await page.screenshot({path: 'firefox-clicks.png', fullPage: true});
           
-          const img = await loadImage('clicks-only.png');
+          const img = await loadImage('firefox-clicks.png');
           const canvas = createCanvas(img.width, img.height);
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
@@ -65,14 +65,14 @@ jobs:
           ctx.lineWidth = 2;
           ctx.stroke();
           
-          fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
+          fs.writeFileSync('firefox-clicks.png', canvas.toBuffer('image/png'));
           
           state.title = await page.title();
           state.url = page.url();
           state.time = new Date().toISOString();
           
           fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
-          console.log(`✅ Firefox-like click ${CLICK_X},${CLICK_Y} - ${state.title}`);
+          console.log(`✅ Firefox: ${state.title} (${CLICK_X},${CLICK_Y})`);
           await browser.close();
         })().catch(console.error);
         EOF
@@ -82,5 +82,5 @@ jobs:
     - name: Commit Files
       uses: EndBug/add-and-commit@v10
       with:
-        add: 'clicks-only.png chrome-state.json'
-        message: "🤖 Firefox clicks update"
+        add: 'firefox-clicks.png chrome-state.json'
+        message: "🦊 Firefox page screenshot + click"
