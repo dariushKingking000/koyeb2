@@ -31,10 +31,10 @@ jobs:
           if (fs.existsSync('chrome-state.json')) {
             state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
           } else {
-            state = { click: [55, 105], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
+            state = { click: [40, 40], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
           }
         } catch(e) { 
-          state = { click: [55, 105], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
+          state = { click: [40, 40], radius: 1, wait: '10s', title: 'Google', url: 'https://google.com' };
         }
         
         const [CLICK_X, CLICK_Y] = state.click;
