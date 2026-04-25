@@ -1,83 +1,78 @@
-name: Pure Clicks - Save to Repo Root
+name: Pure Clicks - NO GIT - Direct Repo Files
 on: [push]
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   clicks:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}$
-        fetch-depth: 0
     
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install & Run Clicks
+    - name: Create Files in Repo Root
       run: |
-        npm init -y
-        npm i playwright canvas
-        npx playwright install chromium
+        npm init -y >/dev/null 2>&1
+        npm i playwright canvas >/dev/null 2>&1
+        npx playwright install chromium chromium --with-deps >/dev/null 2>&1
         
         cat > clicks.js << 'EOF'
-        $const { chromium } = require('playwright')$;
-        $const { createCanvas, loadImage } = require('canvas')$;
-        $const fs = require('fs')$;
+        const { chromium } = require('playwright');
+        const { createCanvas, loadImage } = require('canvas');
+        const fs = require('fs');
         
-        $const CLICK_X = 134$;
-        $const CLICK_Y = 165$;
+        const CLICK_X = 134;
+        const CLICK_Y = 165;
         
-        $let state = { url: 'https://google.com', clicks: [] }$;
-        $if (fs.existsSync('click-state.json')) {$
-          $state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'))$;
-        }
+        let state = { url: 'https://google.com', clicks: [] };
+        try {
+          if (fs.existsSync('click-state.json')) {
+            state = JSON.parse(fs.readFileSync('click-state.json', 'utf8'));
+          }
+        } catch(e) { console.log('No state file'); }
         
-        $(async () => {$
-          $const browser = await chromium.launch({headless: true})$;
-          $const page = await browser.newPage()$;
+        (async () => {
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
           
-          $await page.goto(state.url)$;
-          $await page.mouse.click(CLICK_X, CLICK_Y)$;
-          $state.clicks.push({x: CLICK_X, y: CLICK_Y})$;
+          await page.goto(state.url, {waitUntil: 'networkidle'});
           
-          $await page.waitForTimeout(10000)$;
+          await page.mouse.click(CLICK_X, CLICK_Y);
+          state.clicks.push({x: CLICK_X, y: CLICK_Y, time: new Date().toISOString()});
           
-          $await page.screenshot({path: 'current.png', fullPage: true})$;
+          await page.waitForTimeout(10000);
           
-          $const img = await loadImage('current.png')$;
-          $const canvas = createCanvas(img.width, img.height)$;
-          $const ctx = canvas.getContext('2d')$;
+          await page.screenshot({path: 'clicks-only.png', fullPage: true});
           
-          $ctx.drawImage(img, 0, 0)$;
+          const img = await loadImage('clicks-only.png');
+          const canvas = createCanvas(img.width, img.height);
+          const ctx = canvas.getContext('2d');
           
-          $state.clicks.slice(-10).forEach(click => {$
-            $ctx.beginPath()$;
-            $ctx.arc(click.x, click.y, 2, 0, 2 * Math.PI)$;
-            $ctx.fillStyle = '#ff0000'$;
-            $ctx.fill()$;
-            $ctx.strokeStyle = '#ff0000'$;
-            $ctx.lineWidth = 3$;
-            $ctx.stroke()$;
+          ctx.drawImage(img, 0, 0);
+          
+          state.clicks.slice(-8).forEach((click, i) => {
+            ctx.beginPath();
+            ctx.arc(click.x, click.y, 3, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ff0000';
+            ctx.globalAlpha = 0.8 - i*0.1;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = '#ff4444';
+            ctx.lineWidth = 2;
+            ctx.stroke();
           });
           
-          $fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'))$;
-          $fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2))$;
+          fs.writeFileSync('clicks-only.png', canvas.toBuffer('image/png'));
           
-          $console.log('✅ Files saved to repo root')$;
-          $await browser.close()$;
-        })();
+          state.url = page.url();
+          state.count = state.clicks.length;
+          fs.writeFileSync('click-state.json', JSON.stringify(state, null, 2));
+          
+          console.log(`✅ ${state.count} clicks - ${state.url}`);
+          await browser.close();
+        })().catch(e => console.log('Error:', e.message));
         EOF
         
         node clicks.js
-    
-    - name: Commit Files to Repo
-      run: |
-        $git config --global user.name "github-actions[bot]"$
-        $git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"$
-        git remote set-url origin https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git$
-        git add clicks-only.png click-state.json current.png || true
-        git commit -m "Add clicks: (ls clicks-only.png click-state.json 2>/dev/null && echo OK || echo no files)" || true
-        git push || true
+        
+        echo "Files created:"
+        ls -la clicks-only.png click-state.json 2>/dev/null || echo "No files"
