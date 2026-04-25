@@ -1,6 +1,9 @@
 {
-  "title": "https://www.google.com/search?q=%D8%B3%D9%84%D8%A7%D9%85&sca_esv=8de6bca2391c3c3e&source=hp&ei=gcfsabfCNc3EkPIP9OvsmAY&iflsig=AFdpzrgAAAAAaezVkVUBjaWVs-eAcCGSFGhJeKFxBNOB&ved=0ahUKEwj3hva5k4mUAxVNIkQIHfQ1G2MQ4dUDCA8&uact=5&oq=%D8%B3%D9%84%D8%A7%D9%85&gs_lp=Egdnd3Mtd2l6IgjYs9mE2KfZhUg2UABYAHAAeACQAQCYAQCgAQCqAQC4AQPIAQD4AQGYAgCgAgCYAwCSBwCgBwCyBwC4BwDCBwDIBwCACAE&sclient=gws-wiz&sei=gsfsacnTErvJkPIPvoLmwAM",
-  "url": "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3D%25D8%25B3%25D9%2584%25D8%25A7%25D9%2585%26sca_esv%3D8de6bca2391c3c3e%26source%3Dhp%26ei%3DgcfsabfCNc3EkPIP9OvsmAY%26iflsig%3DAFdpzrgAAAAAaezVkVUBjaWVs-eAcCGSFGhJeKFxBNOB%26ved%3D0ahUKEwj3hva5k4mUAxVNIkQIHfQ1G2MQ4dUDCA8%26uact%3D5%26oq%3D%25D8%25B3%25D9%2584%25D8%25A7%25D9%2585%26gs_lp%3DEgdnd3Mtd2l6IgjYs9mE2KfZhUg2UABYAHAAeACQAQCYAQCgAQCqAQC4AQPIAQD4AQGYAgCgAgCYAwCSBwCgBwCyBwC4BwDCBwDIBwCACAE%26sclient%3Dgws-wiz%26sei%3DgsfsacnTErvJkPIPvoLmwAM&q=EgQUOcaoGIKPs88GIjC4JblAIG1ohPhKiNgheWMuFI1cNEmCgnnMLBFwPT1XT9nXHkjOOtfML2IUfsqitKcyAVJaAUM",
-  "clicked": true,
-  "time": "2026-04-25T13:54:16.343Z"
+  "click": [
+    134,
+    165
+  ],
+  "title": "https://www.google.com/search?q=%D8%B3%D9%84%D8%A7%D9%85&sca_esv=8de6bca2391c3c3e&source=hp&ei=ssrsaZ31DYnKkPIPyIjIgQM&iflsig=AFdpzrgAAAAAaezYwg6m9nR_E6l7NQuH3hN8_L6UzS13&ved=0ahUKEwidlpi_lomUAxUJJUQIHUgEMjAQ4dUDCA8&uact=5&oq=%D8%B3%D9%84%D8%A7%D9%85&gs_lp=Egdnd3Mtd2l6IgjYs9mE2KfZhTILEAAYgAQYsQMYgwEyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAuGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEC4YgARIWVAAWABwAHgAkAEAmAFJoAFJqgEBMbgBA8gBAPgBAZgCAaACUZgDAJIHATGgB-UHsgcBMbgHUcIHAzItMcgHBoAIAQ&sclient=gws-wiz&sei=ssrsadb6LY-dkPIPhtSb4AM",
+  "url": "https://www.google.com/sorry/index?continue=https://www.google.com/search%3Fq%3D%25D8%25B3%25D9%2584%25D8%25A7%25D9%2585%26sca_esv%3D8de6bca2391c3c3e%26source%3Dhp%26ei%3DssrsaZ31DYnKkPIPyIjIgQM%26iflsig%3DAFdpzrgAAAAAaezYwg6m9nR_E6l7NQuH3hN8_L6UzS13%26ved%3D0ahUKEwidlpi_lomUAxUJJUQIHUgEMjAQ4dUDCA8%26uact%3D5%26oq%3D%25D8%25B3%25D9%2584%25D8%25A7%25D9%2585%26gs_lp%3DEgdnd3Mtd2l6IgjYs9mE2KfZhTILEAAYgAQYsQMYgwEyBRAAGIAEMgUQABiABDIFEAAYgAQyBRAuGIAEMgUQABiABDIFEAAYgAQyBRAAGIAEMgUQABiABDIFEC4YgARIWVAAWABwAHgAkAEAmAFJoAFJqgEBMbgBA8gBAPgBAZgCAaACUZgDAJIHATGgB-UHsgcBMbgHUcIHAzItMcgHBoAIAQ%26sclient%3Dgws-wiz%26sei%3Dssrsadb6LY-dkPIPhtSb4AM&q=EgQ0n_ejGLKVs88GIjCrvIjELwtuQoFufBTWmMqwjeXcCyR4OVtaVKU1Jc8aEsUDGh3X0beviNzepAmcL10yAVJaAUM",
+  "time": "2026-04-25T14:07:52.907Z"
 }
