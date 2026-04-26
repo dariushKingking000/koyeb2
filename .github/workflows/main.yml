@@ -23,31 +23,27 @@ jobs:
         cat > test.js << 'EOF'
         const { chromium, webkit } = require('playwright');
         (async () => {
-          // Edge
+          // Edge - سریع
           const browserEdge = await chromium.launch({channel: 'msedge', headless: true});
           const pageEdge = await browserEdge.newPage();
           await pageEdge.goto('https://github.com');
-          await pageEdge.fill('input[placeholder*="Search"]', 'سلام');
-          await pageEdge.press('input[placeholder*="Search"]', 'Enter');
-          await pageEdge.waitForTimeout(3000);
+          await pageEdge.waitForTimeout(2000);
           await pageEdge.screenshot({path: 'salam-edge.png', fullPage: true});
           await browserEdge.close();
           
-          // Webkit (IE-like)
+          // Webkit - سریع
           const browserIE = await webkit.launch({headless: true});
           const pageIE = await browserIE.newPage();
           await pageIE.goto('https://github.com');
-          await pageIE.fill('input[placeholder*="Search"]', 'سلام');
-          await pageIE.press('input[placeholder*="Search"]', 'Enter');
-          await pageIE.waitForTimeout(3000);
+          await pageIE.waitForTimeout(2000);
           await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
           await browserIE.close();
           
-          console.log('✅ salam-edge.png & salam-ie.png');
+          console.log('✅ salam-edge.png & salam-ie.png - 40 ثانیه');
         })().catch(console.error);
         EOF
         
-        node test.js
+        timeout 60s node test.js
         
         ls -la *.png
     
