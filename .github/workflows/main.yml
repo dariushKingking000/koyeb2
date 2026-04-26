@@ -1,4 +1,4 @@
-name: Click Super Fast
+name: Click Perfect
 on: [push]
 permissions:
   contents: write
@@ -10,58 +10,48 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - uses: microsoft/playwright-github-action@v1
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        
+    - name: Install Chrome & deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget gnupg
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+    
+    - name: Install Puppeteer
+      run: |
+        npm init -y
+        npm i puppeteer
     
     - name: Click
       run: |
-        npm init -y
-        npm i playwright
-        
         cat > click.js << 'EOF'
-        const { chromium } = require('playwright');
+        const puppeteer = require('puppeteer');
         const fs = require('fs');
-        
-        (async () => {
-          const config = {
-            url: 'https://chatgpt.com',
-            x: 831, y: 589,
-            ts: new Date().toISOString()
-          };
-          fs.writeFileSync('config.json', JSON.stringify(config));
-          
-          const browser = await chromium.launch({ 
-            headless: true,
-            args: ['--no-sandbox']
-          });
-          const page = await browser.newPage();
-          await page.setViewportSize({ width: 1920, height: 1080 });
-          
-          await page.goto(config.url, { 
-            waitUntil: 'load',
-            timeout: 60000 
-          });
-          
-          await page.screenshot({ path: 'before.png' });
-          await page.mouse.click(config.x, config.y);
-          
-          await page.addStyleTag({
-            content: `
-              div#marker {
-                position: fixed; left: ${config.x-2}px; top: ${config.y-2}px;
-                width: 4px; height: 4px; background: red;
-                border-radius: 50%; border: 1px solid white;
-                z-index: 99999; pointer-events: none;
-              }
-            `
-          });
-          document.body.insertAdjacentHTML('beforeend', '<div id="marker"></div>');
-          
+        (async()=>{
+          const config={url:'https://chatgpt.com',x:831,y:589};
+          fs.writeFileSync('config.json',JSON.stringify(config));
+          const browser=await puppeteer.launch({headless:true,args:['--no-sandbox']});
+          const page=await browser.newPage();
+          await page.setViewport({width:1920,height:1080});
+          await page.goto(config.url,{timeout:60000});
+          await page.screenshot({path:'before.png'});
+          await page.mouse.click(config.x,config.y);
+          await page.evaluate((x,y)=>{
+            const d=document.createElement('div');
+            d.style.cssText=`position:fixed;left:${x-2}px;top:${y-2}px;width:4px;height:4px;background:red;border-radius:50%;border:1px solid white;z-index:99999`;
+            document.body.appendChild(d);
+          },config.x,config.y);
           await page.waitForTimeout(10000);
-          await page.screenshot({ path: 'after.png' });
+          await page.screenshot({path:'after.png'});
           await browser.close();
-        })();
+        })().catch(console.error);
         EOF
-        
         node click.js
     
     - name: Commit
