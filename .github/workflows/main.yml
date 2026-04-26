@@ -9,58 +9,42 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
         persist-credentials: true
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install Playwright & Browsers
-      uses: microsoft/playwright-github-action@v1
-      with:
-        playwright-version: '1.47.0'
+    - name: Install & Setup Playwright
+      run: |
+        npm init -y
+        npm i playwright@1.47.0
+        npx playwright install --with-deps chromium webkit
     
     - name: Generate Screenshots
       run: |
         cat > screenshot.js << 'EOF'
-        const { chromium, webkit } = require('playwright');
-        const fs = require('fs').promises;
-        
+        const playwright = require('playwright');
         (async () => {
-          let url = 'https://chatgpt.com';
-          try {
-            const data = await fs.readFile('config.json', 'utf8');
-            const config = JSON.parse(data);
-            url = config.url || url;
-          } catch {}
-          
-          // Chromium
-          const browser1 = await chromium.launch({ headless: true });
-          const context1 = await browser1.newContext({ viewport: { width: 1920, height: 1080 } });
-          const page1 = await context1.newPage();
-          await page1.goto(url, { waitUntil: 'domcontentloaded' });
-          await page1.screenshot({ path: 'screenshot-chrome.png', fullPage: true });
-          await browser1.close();
-          
-          // Webkit (Safari-like)
-          const browser2 = await webkit.launch({ headless: true });
-          const context2 = await browser2.newContext({ viewport: { width: 1920, height: 1080 } });
-          const page2 = await context2.newPage();
-          await page2.goto(url, { waitUntil: 'domcontentloaded' });
-          await page2.screenshot({ path: 'screenshot-safari.png', fullPage: true });
-          await browser2.close();
-          
-          await fs.writeFile('config.json', JSON.stringify({ url }, null, 2));
-          console.log('✅ Screenshots created!');
-        })();
+          const browsers = ['chromium', 'webkit'];
+          for (const b of browsers) {
+            const browser = await playwright[b].launch({ headless: true });
+            const page = await browser.newPage();
+            await page.setViewportSize({ width: 1920, height: 1080 });
+            await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
+            await page.screenshot({ path: \`screenshot-\${b}.png\`, fullPage: true });
+            await browser.close();
+            console.log(\`✅ \${b} screenshot done\`);
+          }
+          console.log('🎉 All done!');
+        })().catch(console.error);
         EOF
         node screenshot.js
     
-    - name: Verify files
-      run: ls -la *.png config.json
+    - name: List files
+      run: ls -la *.png
     
     - uses: stefanzweifel/git-auto-commit-action@v5
       with:
         commit_message: "📸 Update screenshots [skip ci]"
-        file_pattern: '*.png config.json'
+        file_pattern: '*.png'
