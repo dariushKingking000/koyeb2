@@ -41,17 +41,17 @@ jobs:
           // 🖱️ کلیک دقیق X,Y
           await page.mouse.click(config.x, config.y);
           
-          // 🔴 دایره قرمز
+          // 🔴 کوچکترین دایره ممکن
           await page.evaluate((x, y) => {
             const circle = document.createElement('div');
             circle.style.position = 'fixed';
-            circle.style.left = (x - 8) + 'px';
-            circle.style.top = (y - 8) + 'px';
-            circle.style.width = '16px';
-            circle.style.height = '16px';
+            circle.style.left = (x - 2) + 'px';
+            circle.style.top = (y - 2) + 'px';
+            circle.style.width = '4px';
+            circle.style.height = '4px';
             circle.style.backgroundColor = 'red';
             circle.style.borderRadius = '50%';
-            circle.style.border = '2px solid white';
+            circle.style.border = '1px solid white';
             circle.style.pointerEvents = 'none';
             circle.style.zIndex = '99999';
             document.body.appendChild(circle);
