@@ -1,4 +1,4 @@
-name: Guaranteed Click
+name: Simple Click
 on: [push]
 permissions:
   contents: write
@@ -9,46 +9,34 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install deps + Chrome
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget gnupg xvfb libnss3 libatk-bridge2.0-0 libxss1 libasound2 libgtk-3-0 libgconf-2-4 libxdamage1 libxfixes3 libxrandr2 libgbm1 libxcomposite1 libxcursor1 libpango-1.0-0 libcairo2 libcups2 libdbus-1-3 libexpat1 libfontconfig1 libgcc1 libgdk-pixbuf2.0-0 libglib2.0-0 libnspr4 libpangocairo-1.0-0 libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxext6 libxtst6 ca-certificates fonts-liberation
-        
-        # Chrome
-        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
+    - name: Chrome + Click
+      uses: browser-actions/setup-chrome@v1
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
-        cache: 'npm'
     
-    - name: Click!
-      run: |
-        npm i puppeteer@22.6.1
+    - run: |
+        npm install puppeteer
         cat > click.js << 'EOF'
         const puppeteer = require('puppeteer');
-        (async () => {
-          const browser = await puppeteer.launch({
-            headless: true,
-            executablePath: '/usr/bin/google-chrome-stable',
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-          });
+        puppeteer.launch({
+          headless: true,
+          args: ['--no-sandbox']
+        }).then(async browser => {
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto('https://chatgpt.com', {waitUntil: 'domcontentloaded', timeout: 30000});
+          await page.goto('https://chatgpt.com');
           await page.screenshot({path: 'before.png'});
           await page.mouse.click(831, 589);
-          await page.waitForTimeout(3000);
+          await page.waitForTimeout(2000);
           await page.screenshot({path: 'after.png'});
           await browser.close();
-          console.log('✅ SUCCESS');
-        })().catch(e => console.log('❌', e.message));
+          console.log('DONE');
+        });
         EOF
         node click.js
     
     - uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: "✅ Click Complete"
+        commit_message: "Click DONE"
