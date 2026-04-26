@@ -10,48 +10,65 @@ jobs:
     - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        fetch-depth: 0
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install Playwright
+    - name: Install dependencies
       run: |
         npm init -y
-        npm i playwright
-        npx playwright install chromium webkit
+        npm i playwright@1.47.0
+    
+    - name: Install browsers
+      run: npx playwright install --with-deps chromium webkit
     
     - name: Generate Screenshots
       run: |
-        cat > test.js << 'EOF'
+        cat > screenshot.js << 'EOF'
         const { chromium, webkit } = require('playwright');
         const fs = require('fs');
+        
         (async () => {
-          let url = 'https://chatgpt.com';
-          if (fs.existsSync('config.json')) {
-            url = JSON.parse(fs.readFileSync('config.json')).url || url;
+          try {
+            let url = 'https://chatgpt.com';
+            if (fs.existsSync('config.json')) {
+              const config = JSON.parse(fs.readFileSync('config.json', 'utf8'));
+              url = config.url || url;
+            }
+            
+            // Chromium screenshot
+            const browser1 = await chromium.launch({ headless: true });
+            const page1 = await browser1.newPage();
+            await page1.setViewportSize({ width: 1920, height: 1080 });
+            await page1.goto(url, { waitUntil: 'networkidle' });
+            await page1.screenshot({ path: 'screenshot-chromium.png', fullPage: true });
+            await browser1.close();
+            
+            // Webkit screenshot  
+            const browser2 = await webkit.launch({ headless: true });
+            const page2 = await browser2.newPage();
+            await page2.setViewportSize({ width: 1920, height: 1080 });
+            await page2.goto(url, { waitUntil: 'networkidle' });
+            await page2.screenshot({ path: 'screenshot-webkit.png', fullPage: true });
+            await browser2.close();
+            
+            fs.writeFileSync('config.json', JSON.stringify({ url }, null, 2));
+            console.log('✅ Screenshots generated successfully!');
+          } catch (error) {
+            console.error('❌ Error:', error.message);
+            process.exit(1);
           }
-          const b1 = await chromium.launch({headless:true});
-          const p1 = await b1.newPage();
-          await p1.goto(url);
-          await p1.waitForTimeout(3000);
-          await p1.screenshot({path:'salam.png', fullPage:true});
-          await b1.close();
-          const b2 = await webkit.launch({headless:true});
-          const p2 = await b2.newPage();
-          await p2.goto(url);
-          await p2.waitForTimeout(3000);
-          await p2.screenshot({path:'salam-ie.png', fullPage:true});
-          await b2.close();
-          fs.writeFileSync('config.json', JSON.stringify({url},null,2));
-          console.log('✅ screenshots done');
         })();
         EOF
-        node test.js
+        
+        node screenshot.js
+    
+    - name: Show files
+      run: ls -la *.png *.json || true
     
     - name: Commit & Push
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: "Add screenshots [skip ci]"
+        commit_message: "📸 Update screenshots [skip ci]"
         file_pattern: '*.png *.json'
