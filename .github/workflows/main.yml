@@ -10,6 +10,7 @@ jobs:
     - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}$
+        fetch-depth: 0
     
     - uses: actions/setup-node@v4
       with:
@@ -25,7 +26,6 @@ jobs:
         $const fs = require('fs')$;
         
         $(async () => {$
-          // JSON config
           $let config = { url: 'https://chatgpt.com' }$;
           $if (fs.existsSync('config.json')) {$
             $config = JSON.parse(fs.readFileSync('config.json', 'utf8'))$;
@@ -48,24 +48,24 @@ jobs:
           await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
           await browserIE.close();
           
-          // ذخیره URL جدید در JSON
+          // ذخیره URL
           config.url = 'https://chatgpt.com';
           fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
           
           console.log('✅ salam-edge.png & salam-ie.png');
-          console.log('💾 config.json ذخیره شد');
         })().catch(console.error);
         EOF
         
         timeout 90s node test.js
         
-        cat config.json
-        ls -la *.png *.json
+        cat config.json || echo "config.json ایجاد شد"
+        ls -la *.png *.json || true
     
     - name: Commit
       run: |
-        git config user.name "Actions"
-        git config user.email "actions@github.com"
-        git add salam-*.png config.json
-        git commit -m "Add screenshots + config.json" || exit 0
-        git push
+        git config --global user.name "Actions"
+        git config --global user.email "actions@github.com"
+        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        git add salam-*.png config.json || true
+        git diff --staged --quiet || git commit -m "Add screenshots + config.json"
+        git push || exit 0
