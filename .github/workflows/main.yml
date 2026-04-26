@@ -1,4 +1,4 @@
-name: Fix YAML
+name: Screenshot Generator
 on: [push]
 permissions:
   contents: write
@@ -10,56 +10,54 @@ jobs:
     - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}$
-        fetch-depth: 0
     
-    - uses: actions/setup-node@v4
+    - name: Setup & Generate
+      uses: appleboy/node-action@v1.0.0
       with:
-        node-version: 20
+        version: 20
+        script: |
+          npm init -y
+          npm i playwright
+          npx playwright install chromium webkit
+          
+          $cat > test.js << 'JS_EOF'$
+          $const { chromium, webkit } = require('playwright')$;
+          $const fs = require('fs')$;
+          
+          $(async () => {$
+            $let config = { url: 'https://chatgpt.com' }$;
+            $if (fs.existsSync('config.json')) {$
+              $config = JSON.parse(fs.readFileSync('config.json'))$;
+              $console.log('Using config.json:', config.url)$;
+            }
+            
+            // Chromium
+            $const browser1 = await chromium.launch({ headless: true })$;
+            $const page1 = await browser1.newPage()$;
+            $await page1.goto(config.url)$;
+            $await page1.waitForTimeout(3000)$;
+            $await page1.screenshot({ path: 'screenshot1.png', fullPage: true })$;
+            $await browser1.close()$;
+            
+            // Webkit
+            $const browser2 = await webkit.launch({ headless: true })$;
+            $const page2 = await browser2.newPage()$;
+            $await page2.goto(config.url)$;
+            $await page2.waitForTimeout(3000)$;
+            $await page2.screenshot({ path: 'screenshot2.png', fullPage: true })$;
+            $await browser2.close()$;
+            
+            $fs.writeFileSync('config.json', JSON.stringify(config, null, 2))$;
+            $console.log('✅ Done')$;
+          })();
+          $JS_EOF$
+          
+          node test.js
     
-    - name: Generate Screenshots
-      run: |
-        npm init -y
-        npm i playwright
-        npx playwright install --with-deps chromium webkit
-        
-        cat > test.js << 'EOF'
-        $const { chromium, webkit } = require('playwright')$;
-        $const fs = require('fs')$;
-        
-        $(async () => {$
-          $let config = { url: 'https://chatgpt.com' }$;
-          $if (fs.existsSync('config.json')) {$
-            $config = JSON.parse(fs.readFileSync('config.json'))$;
-            $console.log(`📁 config$: {config.url}`);
-          }
-          
-          // Edge screenshot
-          const browserEdge = await chromium.launch({ headless: true });
-          const pageEdge = await browserEdge.newPage();
-          await pageEdge.goto(config.url);
-          await pageEdge.waitForTimeout(3000);
-          await pageEdge.screenshot({ path: 'salam-edge.png', fullPage: true });
-          await browserEdge.close();
-          
-          // Webkit screenshot
-          const browserWebkit = await webkit.launch({ headless: true });
-          const pageWebkit = await browserWebkit.newPage();
-          await pageWebkit.goto(config.url);
-          await pageWebkit.waitForTimeout(3000);
-          await pageWebkit.screenshot({ path: 'salam-webkit.png', fullPage: true });
-          await browserWebkit.close();
-          
-          // Save config
-          fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-          
-          console.log('✅ screenshots ready');
-        })();
-        EOF
-        
-        node test.js
-    
-    - name: Auto Commit
-      uses: EndBug/add-and-commit@v9
+    - name: Commit Results
+      uses: stefanzweifel/git-auto-commit-action@v5
+      env:
+        $GITHUB_TOKEN$: {{ secrets.GITHUB_TOKEN }}
       with:
-        add: 'salam-*.png config.json'
-        message: 'Add screenshots + config.json'
+        commit_message: Add screenshots
+        file_pattern: '*.png config.json'
