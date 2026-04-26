@@ -6,46 +6,40 @@ permissions:
 jobs:
   screenshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
-      with:
-        persist-credentials: true
     
-    - uses: microsoft/playwright-github-action@v1
+    - uses: browser-actions/setup-chrome@v1
     
-    - name: Generate Screenshots
+    - name: Screenshot with Puppeteer
       run: |
-        npx playwright test --project=chromium -c playwright.config.js << 'EOF'
-        module.exports = {
-          timeout: 60000,
-          use: {
+        npm init -y
+        npm i puppeteer
+        cat > screenshot.js << 'EOF'
+        const puppeteer = require('puppeteer');
+        (async () => {
+          const browser = await puppeteer.launch({
             headless: true,
-            viewport: { width: 1920, height: 1080 },
-          },
-          projects: [{
-            name: 'chromium',
-            use: { ...devices['Desktop Chrome'] },
-          }]
-        };
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+          const page = await browser.newPage();
+          await page.setViewport({ width: 1920, height: 1080 });
+          await page.goto('https://chatgpt.com', { 
+            waitUntil: 'networkidle2',
+            timeout: 15000 
+          });
+          await page.screenshot({ path: 'screenshot.png', fullPage: true });
+          await browser.close();
+          console.log('✅ Done!');
+        })().catch(console.error);
         EOF
-        
-        mkdir -p tests
-        cat > tests/screenshot.spec.js << 'EOF'
-        const { test, expect } = require('@playwright/test');
-        
-        test('screenshot', async ({ page }) => {
-          await page.goto('https://chatgpt.com');
-          await expect(page).toHaveTitle(/ChatGPT/);
-          await page.screenshot({ path: 'screenshot-chromium.png', fullPage: true });
-        });
-        EOF
-        
-        npx playwright test tests/screenshot.spec.js
+        node screenshot.js
     
-    - name: List files
-      run: ls -la *.png
-    
-    - uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "📸 Update screenshots [skip ci]"
-        file_pattern: '*.png'
+    - name: Commit
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add screenshot.png
+        git commit -m "📸 Screenshot [skip ci]" || exit 0
+        git push || exit 0
