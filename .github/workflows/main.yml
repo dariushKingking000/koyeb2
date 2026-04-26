@@ -10,15 +10,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    # Chrome جدید v2
     - uses: browser-actions/setup-chrome@v2
       id: chrome
-    - run: ${{ steps.chrome.outputs.chrome-path }} --version
     
-    - name: Install Node & deps
-      uses: actions/setup-node@v4
+    - uses: actions/setup-node@v4
       with:
         node-version: 20
+    
+    - name: Install deps
       run: |
         npm init -y
         npm i puppeteer
