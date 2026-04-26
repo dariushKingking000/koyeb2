@@ -16,11 +16,9 @@ jobs:
       with:
         node-version: 20
     
-    - name: Install
-      run: npm init -y && npm i playwright
-    
-    - name: Screenshot & Save URL
+    - name: Install & Run
       run: |
+        npm init -y && npm i playwright
         cat > test.js << 'EOF'
         $const { chromium, webkit } = require('playwright')$;
         $const fs = require('fs')$;
@@ -48,24 +46,16 @@ jobs:
           await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
           await browserIE.close();
           
-          // ذخیره URL
           config.url = 'https://chatgpt.com';
           fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-          
-          console.log('✅ salam-edge.png & salam-ie.png');
+          console.log('✅ تمام');
         })().catch(console.error);
         EOF
         
         timeout 90s node test.js
-        
-        cat config.json || echo "config.json ایجاد شد"
-        ls -la *.png *.json || true
     
-    - name: Commit
-      run: |
-        git config --global user.name "Actions"
-        git config --global user.email "actions@github.com"
-        git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-        git add salam-*.png config.json || true
-        git diff --staged --quiet || git commit -m "Add screenshots + config.json"
-        git push || exit 0
+    - name: Commit & Push
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: Add screenshots + config.json
+        file_pattern: '*.png *.json'
