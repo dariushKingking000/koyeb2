@@ -8,5 +8,14 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.41.2"
+  },
+  "directories": {
+    "test": "tests"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^24.42.0"
   }
 }
