@@ -1,4 +1,4 @@
-name: Click Coordinates
+name: Click Super Fast
 on: [push]
 permissions:
   contents: write
@@ -6,78 +6,68 @@ permissions:
 jobs:
   click:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     
-    - uses: browser-actions/setup-chrome@v2
-      id: chrome
+    - uses: microsoft/playwright-github-action@v1
     
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install deps
+    - name: Click
       run: |
         npm init -y
-        npm i puppeteer
-    
-    - name: Click X,Y
-      run: |
+        npm i playwright
+        
         cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer');
+        const { chromium } = require('playwright');
         const fs = require('fs');
         
-        const config = {
-          url: 'https://chatgpt.com',
-          x: 831,
-          y: 589,
-          timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-        
         (async () => {
-          console.log('🚀 Launching...');
-          const browser = await puppeteer.launch({ 
-            headless: true, 
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          const config = {
+            url: 'https://chatgpt.com',
+            x: 831, y: 589,
+            ts: new Date().toISOString()
+          };
+          fs.writeFileSync('config.json', JSON.stringify(config));
+          
+          const browser = await chromium.launch({ 
+            headless: true,
+            args: ['--no-sandbox']
           });
           const page = await browser.newPage();
-          await page.setViewport({width: 1920, height: 1080});
+          await page.setViewportSize({ width: 1920, height: 1080 });
           
-          await page.goto(config.url, {waitUntil: 'domcontentloaded', timeout: 30000});
+          await page.goto(config.url, { 
+            waitUntil: 'load',
+            timeout: 60000 
+          });
           
-          await page.screenshot({path: 'before-click.png', fullPage: true});
-          
+          await page.screenshot({ path: 'before.png' });
           await page.mouse.click(config.x, config.y);
           
-          await page.evaluate((x, y) => {
-            const circle = document.createElement('div');
-            circle.style.position = 'fixed';
-            circle.style.left = (x - 2) + 'px';
-            circle.style.top = (y - 2) + 'px';
-            circle.style.width = '4px';
-            circle.style.height = '4px';
-            circle.style.backgroundColor = 'red';
-            circle.style.borderRadius = '50%';
-            circle.style.border = '1px solid white';
-            circle.style.zIndex = '99999';
-            document.body.appendChild(circle);
-          }, config.x, config.y);
+          await page.addStyleTag({
+            content: `
+              div#marker {
+                position: fixed; left: ${config.x-2}px; top: ${config.y-2}px;
+                width: 4px; height: 4px; background: red;
+                border-radius: 50%; border: 1px solid white;
+                z-index: 99999; pointer-events: none;
+              }
+            `
+          });
+          document.body.insertAdjacentHTML('beforeend', '<div id="marker"></div>');
           
           await page.waitForTimeout(10000);
-          
-          await page.screenshot({path: 'after-click.png', fullPage: true});
+          await page.screenshot({ path: 'after.png' });
           await browser.close();
-          console.log('✅ Complete!');
-        })().catch(console.error);
+        })();
         EOF
+        
         node click.js
     
     - name: Commit
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
+        git config user.name github-actions
+        git config user.email actions@github.com
         git add *.png config.json
-        git commit -m "🎯 Click (831,589)" || exit 0
+        git commit -m "🎯 Click OK" || exit 0
         git push || exit 0
