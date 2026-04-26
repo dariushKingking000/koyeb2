@@ -10,80 +10,62 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - uses: browser-actions/setup-chrome@v1
-    
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install deps & Run
+    - name: Install & Click
       run: |
         npm init -y
         npm i puppeteer@latest
-        echo '{
-          "name": "clicker",
-          "version": "1.0.0",
-          "main": "click.js",
-          "scripts": {
-            "start": "node click.js"
-          }
-        }' > package.json
         
         cat > click.js << 'EOF'
         const puppeteer = require('puppeteer');
-        
         (async () => {
-          console.log('🚀 Starting...');
-          
+          console.log("🚀 Launching browser...");
           const browser = await puppeteer.launch({
             headless: true,
             args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-accelerated-2d-canvas',
-              '--no-first-run',
-              '--no-zygote',
-              '--disable-gpu'
+              "--no-sandbox",
+              "--disable-setuid-sandbox",
+              "--disable-dev-shm-usage",
+              "--disable-gpu",
+              "--single-process"
             ]
           });
           
           const page = await browser.newPage();
-          await page.setViewport({ width: 1920, height: 1080 });
+          await page.setViewport({width:1920, height:1080});
           
-          console.log('🌐 Navigating to ChatGPT...');
-          await page.goto('https://chatgpt.com', { 
-            waitUntil: 'domcontentloaded',
-            timeout: 60000 
-          });
+          console.log("🌐 Going to chatgpt.com...");
+          await page.goto("https://chatgpt.com", {timeout: 60000});
           
-          await page.screenshot({ path: 'before.png' });
-          console.log('📸 Before screenshot saved');
+          await page.screenshot({path: "before.png"});
+          console.log("📸 Before screenshot OK");
           
-          // Click at coordinates
           await page.mouse.click(831, 589);
-          console.log('🖱️ Clicked at 831,589');
+          console.log("🖱️ Clicked!");
           
-          await page.waitForTimeout(5000);
-          await page.screenshot({ path: 'after.png' });
-          console.log('📸 After screenshot saved');
+          await page.waitForTimeout(3000);
+          await page.screenshot({path: "after.png"});
+          console.log("📸 After screenshot OK");
           
           await browser.close();
-          console.log('✅ All done!');
-        })().catch((error) => {
-          console.error('💥 ERROR:', error.message);
+          console.log("✅ Complete!");
+        })().catch(e => {
+          console.error("❌", e.message);
           process.exit(1);
         });
         EOF
         
-        npm start
+        node click.js
     
-    - name: Commit Results
+    - name: Commit
       if: always()
       run: |
-        git config --global user.name github-actions
-        git config --global user.email actions@github.com
-        ls -la *.png || true
-        git add *.png || true
-        git commit -m "🎯 Click results" || true
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        ls -la || true
+        git add . || true
+        git commit -m "🎯 Click $(date)" || true
         git push || true
