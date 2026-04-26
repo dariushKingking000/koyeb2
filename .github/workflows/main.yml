@@ -16,22 +16,34 @@ jobs:
         node-version: 20
     
     - name: Install
-      run: npm init -y && npm i playwright && npx playwright install chromium
+      run: npm init -y && npm i playwright && npx playwright install chromium msedge
     
-    - name: Screenshot
+    - name: Screenshot Edge & IE
       run: |
         cat > test.js << 'EOF'
-        const { chromium } = require('playwright');
+        const { chromium, webkit } = require('playwright');
         (async () => {
-          const browser = await chromium.launch({headless: true});
-          const page = await browser.newPage();
-          await page.goto('https://github.com');
-          await page.fill('input[placeholder*="Search"]', 'سلام');
-          await page.press('input[placeholder*="Search"]', 'Enter');
-          await page.waitForTimeout(3000);
-          await page.screenshot({path: 'salam.png', fullPage: true});
-          await browser.close();
-          console.log('✅ سلام.png');
+          // Edge
+          const browserEdge = await chromium.launch({channel: 'msedge', headless: true});
+          const pageEdge = await browserEdge.newPage();
+          await pageEdge.goto('https://github.com');
+          await pageEdge.fill('input[placeholder*="Search"]', 'سلام');
+          await pageEdge.press('input[placeholder*="Search"]', 'Enter');
+          await pageEdge.waitForTimeout(3000);
+          await pageEdge.screenshot({path: 'salam-edge.png', fullPage: true});
+          await browserEdge.close();
+          
+          // Webkit (IE-like)
+          const browserIE = await webkit.launch({headless: true});
+          const pageIE = await browserIE.newPage();
+          await pageIE.goto('https://github.com');
+          await pageIE.fill('input[placeholder*="Search"]', 'سلام');
+          await pageIE.press('input[placeholder*="Search"]', 'Enter');
+          await pageIE.waitForTimeout(3000);
+          await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
+          await browserIE.close();
+          
+          console.log('✅ salam-edge.png & salam-ie.png');
         })().catch(console.error);
         EOF
         
@@ -43,6 +55,6 @@ jobs:
       run: |
         git config user.name "Actions"
         git config user.email "actions@github.com"
-        git add salam.png
-        git commit -m "Add salam.png" || exit 0
+        git add salam-*.png
+        git commit -m "Add salam-edge.png & salam-ie.png" || exit 0
         git push
