@@ -1,4 +1,4 @@
-name: Lightning Click
+name: NO DEPENDS Click
 on: [push]
 permissions:
   contents: write
@@ -6,39 +6,43 @@ permissions:
 jobs:
   click:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
     
-    - name: Playwright Click
-      uses: microsoft/playwright-github-action@v1
-      with:
-        playwright-version: '1.47.0'
-        install-deps: true
-    
-    - name: Execute Click
+    - name: Pure Chrome Click
       run: |
+        # Chrome بدون deps
+        sudo apt-get update -qq
+        sudo apt-get install -y wget gnupg xvfb -qq
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+        sudo apt-get update -qq
+        sudo apt-get install -y google-chrome-stable -qq
+        
         cat > click.js << 'EOF'
-        const { chromium } = require('playwright');
+        const puppeteer = require('puppeteer');
         (async () => {
-          const browser = await chromium.launch({ headless: true });
+          const browser = await puppeteer.launch({
+            headless: true,
+            executablePath: '/usr/bin/google-chrome-stable',
+            args: ['--no-sandbox']
+          });
           const page = await browser.newPage();
-          await page.setViewportSize({ width: 1920, height: 1080 });
-          await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
-          await page.screenshot({ path: 'before.png' });
-          await page.mouse.click(831, 589);
+          await page.setViewport({width: 1920,height: 1080});
+          await page.goto('https://chatgpt.com');
+          await page.screenshot({path:'before.png'});
+          await page.mouse.click(831,589);
           await page.waitForTimeout(2000);
-          await page.screenshot({ path: 'after.png' });
+          await page.screenshot({path:'after.png'});
           await browser.close();
         })();
         EOF
-        npx playwright install-deps chromium
+        
+        # Puppeteer بدون install
+        npm install puppeteer@22.6.1
+        
         node click.js
     
-    - name: Commit
-      run: |
-        git config user.name ClickBot
-        git config user.email bot@github.com
-        git add *.png || true
-        git commit -m "⚡ Playwright Click" || true
-        git push || true
+    - uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "⚡ Chrome Click"
