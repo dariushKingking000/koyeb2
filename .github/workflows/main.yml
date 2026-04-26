@@ -1,10 +1,10 @@
-name: Screenshot
+name: Click & Screenshot
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  click:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -12,39 +12,41 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Screenshot
+    - name: Click Action
       run: |
         npm init -y
         npm i puppeteer
-        cat > screenshot.js << 'EOF'
+        cat > click.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
-        // JSON config بساز/بروزرسانی
-        const config = {
-          url: 'https://chatgpt.com',
-          width: 1920,
-          height: 1080,
-          timestamp: new Date().toISOString()
-        };
+        // config.json
+        const config = {url: 'https://chatgpt.com', selector: '#prompt-textarea', timestamp: new Date().toISOString()};
         fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
         
         (async () => {
           const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
-          await page.setViewport({width: config.width, height: config.height});
-          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 15000});
-          await page.screenshot({path: 'screenshot.png', fullPage: true});
+          await page.goto(config.url, {waitUntil: 'networkidle2'});
+          
+          // 🔘 کلیک روی selector (مثل textarea)
+          await page.waitForSelector(config.selector, {timeout: 10000});
+          await page.click(config.selector);
+          console.log(`✅ Clicked: ${config.selector}`);
+          
+          // 📸 عکس قبل/بعد
+          await page.screenshot({path: 'before-click.png'});
+          await page.screenshot({path: 'after-click.png', fullPage: true});
+          
           await browser.close();
-          console.log('✅ Screenshot & config.json saved!');
         })();
         EOF
-        node screenshot.js
+        node click.js
     
     - name: Commit
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot.png config.json
-        git commit -m "📸 Screenshot + config.json [skip ci]" || exit 0
+        git add *.png config.json
+        git commit -m "🖱️ Click + Screenshots [skip ci]" || exit 0
         git push || exit 0
