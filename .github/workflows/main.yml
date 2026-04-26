@@ -35,11 +35,32 @@ jobs:
           await page.setViewport({width: 1920, height: 1080});
           await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 20000});
           
+          // 📸 قبل از کلیک
+          await page.screenshot({path: 'before-click.png', fullPage: true});
+          
           // 🖱️ کلیک دقیق X,Y
           await page.mouse.click(config.x, config.y);
+          
+          // 🔴 دایره قرمز
+          await page.evaluate((x, y) => {
+            const circle = document.createElement('div');
+            circle.style.position = 'fixed';
+            circle.style.left = (x - 8) + 'px';
+            circle.style.top = (y - 8) + 'px';
+            circle.style.width = '16px';
+            circle.style.height = '16px';
+            circle.style.backgroundColor = 'red';
+            circle.style.borderRadius = '50%';
+            circle.style.border = '2px solid white';
+            circle.style.pointerEvents = 'none';
+            circle.style.zIndex = '99999';
+            document.body.appendChild(circle);
+          }, config.x, config.y);
+          
           console.log(`✅ Clicked at (${config.x}, ${config.y})`);
           
-          await page.screenshot({path: 'clicked.png', fullPage: true});
+          // 📸 بعد از کلیک + دایره
+          await page.screenshot({path: 'after-click.png', fullPage: true});
           await browser.close();
         })().catch(e => {
           console.error('❌ Error:', e.message);
