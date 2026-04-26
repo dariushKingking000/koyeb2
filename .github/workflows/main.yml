@@ -1,32 +1,43 @@
-name: Fast Clicker
+name: Super Fast Clicker
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  fastclick:
-    runs-on: ubuntu-22.04  # سریعتر از ubuntu-latest
-    timeout-minutes: 8
+  click:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
     
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-        cache: 'npm'
-    
-    - name: Ultra Fast Click
+    - name: Fast Click NO NPM
       run: |
-        npm i puppeteer@22.6.1 -g --silent
+        curl -sL https://raw.githubusercontent.com/puppeteer/puppeteer/main/src/install.js | node --no-warnings
         cat > click.js << 'EOF'
-        const puppeteer=require('puppeteer');(async()=>{const b=await puppeteer.launch({headless:!0,args:['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--single-process','--no-zygote','--disable-extensions']}),p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto('https://chatgpt.com',{waitUntil:'domcontentloaded',timeout:15000});await p.screenshot({path:'before.png'});await p.mouse.click(831,589);await p.waitForTimeout(2e3);await p.screenshot({path:'after.png'});await b.close();})();
+        const puppeteer = require('puppeteer');
+        (async () => {
+          try {
+            const browser = await puppeteer.launch({
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+            await page.setViewport({width: 1920, height: 1080});
+            await page.goto('https://chatgpt.com', {timeout: 20000});
+            await page.screenshot({path: 'before.png'});
+            await page.mouse.click(831, 589);
+            await page.waitForTimeout(2000);
+            await page.screenshot({path: 'after.png'});
+            await browser.close();
+          } catch(e) {}
+        })();
         EOF
-        time node click.js
+        node click.js
     
     - name: Commit
       run: |
-        git config user.name ClickBot
-        git config user.email actions@github.com
-        git add *.png || exit 0
-        git commit -m FastClick || exit 0
-        git push || exit 0
+        git config --global user.name "ClickBot"
+        git config --global user.email "bot@github.com"
+        git add before.png after.png || true
+        git commit -m "⚡ FastClick" || true
+        git push || true
