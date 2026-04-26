@@ -1,92 +1,48 @@
-name: Edge Clicks - Safe Site
+name: Fix YAML
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  clicks:
+  screenshot:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install Edge
-      run: |
-        npm init -y
-        npm i playwright canvas
-        npx playwright install --with-deps msedge
+    - name: Install
+      run: npm init -y && npm i playwright && npx playwright install chromium
     
-    - name: Generate Clicks
+    - name: Screenshot
       run: |
-        cat > clicks.js << 'EOF'
-        const { microsoftEdge } = require('playwright');
-        const { createCanvas, loadImage } = require('canvas');
-        const fs = require('fs');
-        
-        let state;
-        try {
-          if (fs.existsSync('chrome-state.json')) {
-            state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
-          } else {
-            state = { 
-              click: [134, 165], 
-              radius: 1, 
-              wait: '10s', 
-              title: 'Microsoft Edge', 
-              url: 'https://www.microsoft.com/en-us/edge' 
-            };
-          }
-        } catch(e) { 
-          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Microsoft Edge', url: 'https://www.microsoft.com/en-us/edge' };
-        }
-        
-        const [CLICK_X, CLICK_Y] = state.click;
-        const WAIT_MS = state.wait === '10s' ? 10000 : 5000;
-        
+        cat > test.js << 'EOF'
+        const { chromium } = require('playwright');
         (async () => {
-          const browser = await microsoftEdge.launch({ headless: true });
-          const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-          
-          await page.goto(state.url, { waitUntil: 'networkidle' });
-          await page.mouse.click(CLICK_X, CLICK_Y);
-          
-          await page.waitForTimeout(WAIT_MS);
-          await page.screenshot({ path: 'edge-clicks.png', fullPage: true });
-          
-          const img = await loadImage('edge-clicks.png');
-          const canvas = createCanvas(img.width, img.height);
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          
-          ctx.beginPath();
-          ctx.arc(CLICK_X, CLICK_Y, state.radius * 3, 0, 2 * Math.PI);
-          ctx.fillStyle = '#ff0000';
-          ctx.globalAlpha = 0.7;
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = '#ff4444';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          
-          fs.writeFileSync('edge-clicks.png', canvas.toBuffer('image/png'));
-          
-          state.title = await page.title();
-          state.url = page.url();
-          state.time = new Date().toISOString();
-          
-          fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
-          console.log(`✅ Edge: ${state.title}`);
+          const browser = await chromium.launch({headless: true});
+          const page = await browser.newPage();
+          await page.goto('https://google.com');
+          await page.fill('textarea[name="q"]', 'سلام');
+          await page.press('textarea[name="q"]', 'Enter');
+          await page.waitForTimeout(3000);
+          await page.screenshot({path: 'salam.png', fullPage: true});
           await browser.close();
+          console.log('✅ سلام.png');
         })().catch(console.error);
         EOF
         
-        node clicks.js
+        node test.js
+        
+        ls -la *.png
     
-    - name: Commit Files
-      uses: EndBug/add-and-commit@v10
-      with:
-        add: 'edge-clicks.png chrome-state.json'
-        message: "🟦 Edge safe screenshot"
+    - name: Commit
+      run: |
+        git config user.name "Actions"
+        git config user.email "actions@github.com"
+        git add salam.png
+        git commit -m "Add salam.png" || exit 0
+        git push
