@@ -1,67 +1,79 @@
-name: Screenshot Chrome
+name: Click & Screenshot
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  clicker:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     
-    # Chrome 126 (آخرین stable)
     - name: Setup Chrome 126
       uses: browser-actions/setup-chrome@v1
       with:
         chrome-version: '126.0.6478.126'
     
-    - name: Screenshot
+    - name: Click & Screenshot
       run: |
         npm init -y
         npm i puppeteer@22.6.1
-        cat > screenshot.js << 'EOF'
+        
+        cat > clicker.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
         const config = {
           url: 'https://chatgpt.com',
+          clickX: 831,
+          clickY: 589,
           width: 1920,
           height: 1080,
           chromeVersion: '126.0.6478.126',
           timestamp: new Date().toISOString()
         };
+        
         fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
         
         (async () => {
-          console.log('🚀 Launching Chrome 126...');
+          console.log('🚀 Chrome launching...');
           const browser = await puppeteer.launch({
             headless: true,
             executablePath: process.env.CHROME_BIN,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu'
-            ]
+            args: ['--no-sandbox','--disable-setuid-sandbox','--disable-gpu']
           });
           
           const page = await browser.newPage();
           await page.setViewport({width: config.width, height: config.height});
-          console.log('🌐 Loading', config.url);
-          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 30000});
           
-          await page.screenshot({path: 'screenshot.png', fullPage: true});
-          console.log('📸 Screenshot saved!');
+          // قبل کلیک
+          console.log('🌐 Loading ChatGPT...');
+          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 30000});
+          await page.screenshot({path: 'before.png', fullPage: true});
+          console.log('📸 before.png saved');
+          
+          // کلیک دقیق
+          console.log(`🖱️ Clicking ${config.clickX},${config.clickY}`);
+          await page.mouse.click(config.clickX, config.clickY);
+          await page.waitForTimeout(5000); // صبر 5 ثانیه
+          
+          // بعد کلیک
+          await page.screenshot({path: 'after.png', fullPage: true});
+          console.log('📸 after.png saved');
+          
           await browser.close();
-        })().catch(console.error);
+          console.log('✅ Complete!');
+        })().catch(e => console.error('❌', e.message));
         EOF
-        node screenshot.js
+        
+        node clicker.js
     
-    - name: Commit
+    - name: Commit Results
       run: |
-        git config user.name "github-actions"
+        git config user.name "ClickBot"
         git config user.email "actions@github.com"
-        git add screenshot.png config.json || true
-        git commit -m "📸 Chrome 126 Screenshot [skip ci]" || true
+        ls -la *.png config.json
+        git add *.png config.json || true
+        git commit -m "🎯 Clicked 831,589 | $(date)" || true
         git push || true
