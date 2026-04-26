@@ -25,9 +25,9 @@ jobs:
         (async () => {
           const browser = await chromium.launch({headless: true});
           const page = await browser.newPage();
-          await page.goto('https://google.com');
-          await page.fill('textarea[name="q"]', 'سلام');
-          await page.press('textarea[name="q"]', 'Enter');
+          await page.goto('https://github.com');
+          await page.fill('input[placeholder*="Search"]', 'سلام');
+          await page.press('input[placeholder*="Search"]', 'Enter');
           await page.waitForTimeout(3000);
           await page.screenshot({path: 'salam.png', fullPage: true});
           await browser.close();
