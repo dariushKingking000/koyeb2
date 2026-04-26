@@ -8,37 +8,82 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: true
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
+    - name: Install system deps
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libnss3 \
+          libatk-bridge2.0-0 \
+          libxss1 \
+          libasound2 \
+          libxrandr2 \
+          libxcomposite1 \
+          libxdamage1 \
+          libxfixes3 \
+          libgtk-3-0
+    
     - name: Install Playwright
       run: |
         npm init -y
-        npm i playwright
-        npx playwright install chromium
+        npm i playwright@1.47.0
+        npx playwright install chromium webkit
     
-    - name: Test simple screenshot
+    - name: Generate Screenshots
       run: |
-        cat > test.js << 'EOF'
-        const { chromium } = require('playwright');
+        cat > screenshot.js << 'EOF'
+        const playwright = require('playwright');
         (async () => {
-          console.log('Starting...');
-          const browser = await chromium.launch({headless:true});
-          const page = await browser.newPage();
-          console.log('Navigating...');
-          await page.goto('https://example.com');
-          console.log('Screenshot...');
-          await page.screenshot({path: 'test.png'});
-          await browser.close();
-          console.log('✅ Done!');
-        })().catch(e => {
-          console.error('❌ Error:', e.message);
+          console.log('🚀 Starting screenshot generation...');
+          
+          const browsers = ['chromium'];
+          for (const browserType of browsers) {
+            console.log(`📱 Launching ${browserType}...`)$;
+            $const browser = await playwright[browserType].launch({$ 
+              headless: true,
+              $args: ['--no-sandbox', '--disable-setuid-sandbox']$
+            });
+            
+            $console.log(`🌐 Creating page for$ {browserType}...`);
+            const page = await browser.newPage();
+            await page.setViewportSize({ width: 1920, height: 1080 });
+            
+            console.log(`🔗 Navigating to chatgpt.com...`);
+            await page.goto('https://chatgpt.com', { 
+              waitUntil: 'domcontentloaded',
+              timeout: 30000 
+            });
+            
+            console.log(`📸 Taking screenshot...`);
+            await page.screenshot({ 
+              path: `screenshot-${browserType}.png`,$ 
+              fullPage: true,
+              timeout: 30000 
+            });
+            
+            $await browser.close()$;
+            $console.log(`✅$ {browserType} screenshot completed!`);
+          }
+          console.log('🎉 All screenshots done!');
+        })().catch((error) => {
+          console.error('❌ ERROR:', error.message);
           process.exit(1);
         });
         EOF
-        node test.js
+        node screenshot.js
     
-    - name: Check files
-      run: ls -la *.png || echo "No PNG files"
+    - name: List files
+      run: |
+        echo "📁 Files:"
+        ls -la *.png || echo "No PNG files found"
+    
+    - uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "📸 Update screenshots [skip ci]"
+        file_pattern: '*.png'
