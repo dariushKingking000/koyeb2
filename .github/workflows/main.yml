@@ -12,27 +12,32 @@ jobs:
     
     - uses: browser-actions/setup-chrome@v1
     
-    - name: Screenshot with Puppeteer
+    - name: Screenshot
       run: |
         npm init -y
         npm i puppeteer
         cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
+        const fs = require('fs');
+        
+        // JSON config بساز/بروزرسانی
+        const config = {
+          url: 'https://chatgpt.com',
+          width: 1920,
+          height: 1080,
+          timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+        
         (async () => {
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
+          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
-          await page.setViewport({ width: 1920, height: 1080 });
-          await page.goto('https://chatgpt.com', { 
-            waitUntil: 'networkidle2',
-            timeout: 15000 
-          });
-          await page.screenshot({ path: 'screenshot.png', fullPage: true });
+          await page.setViewport({width: config.width, height: config.height});
+          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 15000});
+          await page.screenshot({path: 'screenshot.png', fullPage: true});
           await browser.close();
-          console.log('✅ Done!');
-        })().catch(console.error);
+          console.log('✅ Screenshot & config.json saved!');
+        })();
         EOF
         node screenshot.js
     
@@ -40,6 +45,6 @@ jobs:
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add screenshot.png
-        git commit -m "📸 Screenshot [skip ci]" || exit 0
+        git add screenshot.png config.json
+        git commit -m "📸 Screenshot + config.json [skip ci]" || exit 0
         git push || exit 0
