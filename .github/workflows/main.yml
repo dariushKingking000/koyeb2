@@ -10,14 +10,10 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Chrome # جایگزین nanasess/setup-chrome
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget gnupg
-        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
+    # استفاده از action آماده برای Chrome + Puppeteer
+    - uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: stable
     
     - uses: actions/setup-node@v4
       with:
@@ -29,7 +25,7 @@ jobs:
         npm i puppeteer -s
         
         cat > click.js << 'EOF'
-        const puppeteer=require('puppeteer');(async()=>{const b=await puppeteer.launch({headless:true,executablePath:'/usr/bin/google-chrome-stable',args:['--no-sandbox','--disable-web-security','--disable-features=VizDisplayCompositor']}),p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto('https://chatgpt.com',{timeout:30000});await p.screenshot({path:'before.png'});await p.mouse.click(831,589);await p.evaluate((x,y)=>{const d=document.createElement('div');d.style.cssText=`position:fixed;left:\${x-2}px;top:\${y-2}px;width:4px;height:4px;background:red;border-radius:50%;border:1px solid white;z-index:99999`;document.body.appendChild(d);},831,589);await p.waitForTimeout(5000);await p.screenshot({path:'after.png'});await b.close();})();
+        const puppeteer=require('puppeteer');(async()=>{try{const b=await puppeteer.launch({headless:'new',args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-web-security','--disable-features=VizDisplayCompositor']}),p=await b.newPage();await p.setViewport({width:1920,height:1080});await p.goto('https://chatgpt.com',{waitUntil:'networkidle0',timeout:60000});await p.screenshot({path:'before.png'});await p.mouse.click(831,589);await p.waitForTimeout(5000);await p.screenshot({path:'after.png'});await b.close();console.log('✅ Success!');}catch(e){console.error('❌ Error:',e.message);process.exit(1);}})().catch(console.error);
         EOF
         
         node click.js
@@ -39,5 +35,5 @@ jobs:
         git config --global user.name github-actions
         git config --global user.email actions@github.com
         git add *.png || true
-        git commit -m "🎯 Click" || true
+        git commit -m "🎯 Click screenshots" || true
         git push || true
