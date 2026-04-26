@@ -8,43 +8,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-      with:
-        persist-credentials: true
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install & Setup Playwright
+    - name: Install Playwright
       run: |
         npm init -y
-        npm i playwright@1.47.0
-        npx playwright install --with-deps chromium webkit
+        npm i playwright
+        npx playwright install chromium
     
-    - name: Generate Screenshots
+    - name: Test simple screenshot
       run: |
-        cat > screenshot.js << 'EOF'
-        const playwright = require('playwright');
+        cat > test.js << 'EOF'
+        const { chromium } = require('playwright');
         (async () => {
-          const browsers = ['chromium', 'webkit'];
-          for (const b of browsers) {
-            const browser = await playwright[b].launch({ headless: true });
-            const page = await browser.newPage();
-            await page.setViewportSize({ width: 1920, height: 1080 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
-            await page.screenshot({ path: \`screenshot-\${b}.png\`, fullPage: true });
-            await browser.close();
-            console.log(\`✅ \${b} screenshot done\`);
-          }
-          console.log('🎉 All done!');
-        })().catch(console.error);
+          console.log('Starting...');
+          const browser = await chromium.launch({headless:true});
+          const page = await browser.newPage();
+          console.log('Navigating...');
+          await page.goto('https://example.com');
+          console.log('Screenshot...');
+          await page.screenshot({path: 'test.png'});
+          await browser.close();
+          console.log('✅ Done!');
+        })().catch(e => {
+          console.error('❌ Error:', e.message);
+          process.exit(1);
+        });
         EOF
-        node screenshot.js
+        node test.js
     
-    - name: List files
-      run: ls -la *.png
-    
-    - uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "📸 Update screenshots [skip ci]"
-        file_pattern: '*.png'
+    - name: Check files
+      run: ls -la *.png || echo "No PNG files"
