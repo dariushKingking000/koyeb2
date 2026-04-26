@@ -9,24 +9,33 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}$
     
     - uses: actions/setup-node@v4
       with:
         node-version: 20
     
     - name: Install
-      run: npm init -y && npm i playwright && npx playwright install chromium msedge
+      run: npm init -y && npm i playwright
     
-    - name: Screenshot Edge & IE
+    - name: Screenshot & Save URL
       run: |
         cat > test.js << 'EOF'
-        const { chromium, webkit } = require('playwright');
-        (async () => {
+        $const { chromium, webkit } = require('playwright')$;
+        $const fs = require('fs')$;
+        
+        $(async () => {$
+          // JSON config
+          $let config = { url: 'https://chatgpt.com' }$;
+          $if (fs.existsSync('config.json')) {$
+            $config = JSON.parse(fs.readFileSync('config.json', 'utf8'))$;
+            $console.log(`📁$ از config.json: {config.url}`);
+          }
+          
           // Edge
           const browserEdge = await chromium.launch({channel: 'msedge', headless: true});
           const pageEdge = await browserEdge.newPage();
-          await pageEdge.goto('https://chatgpt.com');
+          await pageEdge.goto(config.url);
           await pageEdge.waitForTimeout(2000);
           await pageEdge.screenshot({path: 'salam-edge.png', fullPage: true});
           await browserEdge.close();
@@ -34,23 +43,29 @@ jobs:
           // Webkit
           const browserIE = await webkit.launch({headless: true});
           const pageIE = await browserIE.newPage();
-          await pageIE.goto('https://chatgpt.com');
+          await pageIE.goto(config.url);
           await pageIE.waitForTimeout(2000);
           await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
           await browserIE.close();
           
+          // ذخیره URL جدید در JSON
+          config.url = 'https://chatgpt.com';
+          fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+          
           console.log('✅ salam-edge.png & salam-ie.png');
+          console.log('💾 config.json ذخیره شد');
         })().catch(console.error);
         EOF
         
-        timeout 60s node test.js
+        timeout 90s node test.js
         
-        ls -la *.png
+        cat config.json
+        ls -la *.png *.json
     
     - name: Commit
       run: |
         git config user.name "Actions"
         git config user.email "actions@github.com"
-        git add salam-*.png
-        git commit -m "Add chatgpt screenshots" || exit 0
+        git add salam-*.png config.json
+        git commit -m "Add screenshots + config.json" || exit 0
         git push
