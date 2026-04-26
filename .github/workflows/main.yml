@@ -1,4 +1,4 @@
-name: Super Fast Clicker
+name: Lightning Click
 on: [push]
 permissions:
   contents: write
@@ -10,34 +10,35 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Fast Click NO NPM
+    - name: Playwright Click
+      uses: microsoft/playwright-github-action@v1
+      with:
+        playwright-version: '1.47.0'
+        install-deps: true
+    
+    - name: Execute Click
       run: |
-        curl -sL https://raw.githubusercontent.com/puppeteer/puppeteer/main/src/install.js | node --no-warnings
         cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer');
+        const { chromium } = require('playwright');
         (async () => {
-          try {
-            const browser = await puppeteer.launch({
-              headless: true,
-              args: ['--no-sandbox', '--disable-setuid-sandbox']
-            });
-            const page = await browser.newPage();
-            await page.setViewport({width: 1920, height: 1080});
-            await page.goto('https://chatgpt.com', {timeout: 20000});
-            await page.screenshot({path: 'before.png'});
-            await page.mouse.click(831, 589);
-            await page.waitForTimeout(2000);
-            await page.screenshot({path: 'after.png'});
-            await browser.close();
-          } catch(e) {}
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          await page.setViewportSize({ width: 1920, height: 1080 });
+          await page.goto('https://chatgpt.com', { waitUntil: 'domcontentloaded' });
+          await page.screenshot({ path: 'before.png' });
+          await page.mouse.click(831, 589);
+          await page.waitForTimeout(2000);
+          await page.screenshot({ path: 'after.png' });
+          await browser.close();
         })();
         EOF
+        npx playwright install-deps chromium
         node click.js
     
     - name: Commit
       run: |
-        git config --global user.name "ClickBot"
-        git config --global user.email "bot@github.com"
-        git add before.png after.png || true
-        git commit -m "⚡ FastClick" || true
+        git config user.name ClickBot
+        git config user.email bot@github.com
+        git add *.png || true
+        git commit -m "⚡ Playwright Click" || true
         git push || true
