@@ -1,47 +1,67 @@
-name: Click Debug
+name: Screenshot Chrome
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  debug:
+  screenshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
     
-    - name: Debug Info
-      run: |
-        node --version
-        npm --version
-        
-    - name: Test Puppeteer
+    # Chrome 126 (آخرین stable)
+    - name: Setup Chrome 126
+      uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: '126.0.6478.126'
+    
+    - name: Screenshot
       run: |
         npm init -y
-        npm i puppeteer
-        node -e "console.log('Node OK')"
-        
-    - name: Simple Test
-      run: |
-        node -e "
+        npm i puppeteer@22.6.1
+        cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
-        (async()=>{
-          try{
-            const browser = await puppeteer.launch({headless:true,args:['--no-sandbox']});
-            const page = await browser.newPage();
-            await page.goto('https://example.com');
-            await page.screenshot({path:'test.png'});
-            await browser.close();
-            console.log('✅ Puppeteer WORKS!');
-          }catch(e){
-            console.error('❌',e.message);
-          }
-        })()
-        "
+        const fs = require('fs');
+        
+        const config = {
+          url: 'https://chatgpt.com',
+          width: 1920,
+          height: 1080,
+          chromeVersion: '126.0.6478.126',
+          timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+        
+        (async () => {
+          console.log('🚀 Launching Chrome 126...');
+          const browser = await puppeteer.launch({
+            headless: true,
+            executablePath: process.env.CHROME_BIN,
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
+          });
+          
+          const page = await browser.newPage();
+          await page.setViewport({width: config.width, height: config.height});
+          console.log('🌐 Loading', config.url);
+          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 30000});
+          
+          await page.screenshot({path: 'screenshot.png', fullPage: true});
+          console.log('📸 Screenshot saved!');
+          await browser.close();
+        })().catch(console.error);
+        EOF
+        node screenshot.js
     
-    - name: Commit Test
+    - name: Commit
       run: |
-        git config user.name "test"
-        git config user.email "test@test"
-        git add test.png || true
-        git commit -m "test" || true
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add screenshot.png config.json || true
+        git commit -m "📸 Chrome 126 Screenshot [skip ci]" || true
         git push || true
