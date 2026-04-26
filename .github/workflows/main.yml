@@ -1,4 +1,4 @@
-name: Firefox Clicks
+name: Firefox Clicks - Anti-Captcha
 on: [push]
 permissions:
   contents: write
@@ -31,20 +31,38 @@ jobs:
           if (fs.existsSync('chrome-state.json')) {
             state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
           } else {
-            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/' };
+            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/en-US/firefox/new/' };
           }
         } catch(e) { 
-          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/' };
+          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/en-US/firefox/new/' };
         }
         
         const [CLICK_X, CLICK_Y] = state.click;
         const WAIT_MS = state.wait === '10s' ? 10000 : 5000;
         
         (async () => {
-          const browser = await firefox.launch({headless: true});
-          const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
+          const browser = await firefox.launch({ 
+            headless: true,
+            args: ['--no-sandbox', '--disable-blink-features=AutomationControlled']
+          });
+          const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/120.0',
+            viewport: { width: 1920, height: 1080 }
+          });
+          const page = await context.newPage();
           
-          await page.goto(state.url, {waitUntil: 'networkidle'});
+          // Anti-detection
+          await page.addInitScript(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            delete navigator.__proto__.webdriver;
+          });
+          
+          await page.goto(state.url, { 
+            waitUntil: 'networkidle',
+            timeout: 30000 
+          });
+          
+          await page.waitForTimeout(3000);
           await page.mouse.click(CLICK_X, CLICK_Y);
           
           await page.waitForTimeout(WAIT_MS);
@@ -72,7 +90,7 @@ jobs:
           state.time = new Date().toISOString();
           
           fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
-          console.log(`✅ Firefox: ${state.title} (${CLICK_X},${CLICK_Y})`);
+          console.log(`✅ Firefox: ${state.title}`);
           await browser.close();
         })().catch(console.error);
         EOF
@@ -83,4 +101,4 @@ jobs:
       uses: EndBug/add-and-commit@v10
       with:
         add: 'firefox-clicks.png chrome-state.json'
-        message: "🦊 Firefox page screenshot + click"
+        message: "🦊 Firefox anti-captcha screenshot"
