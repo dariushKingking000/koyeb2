@@ -23,23 +23,23 @@ jobs:
         cat > test.js << 'EOF'
         const { chromium, webkit } = require('playwright');
         (async () => {
-          // Edge - سریع
+          // Edge
           const browserEdge = await chromium.launch({channel: 'msedge', headless: true});
           const pageEdge = await browserEdge.newPage();
-          await pageEdge.goto('https://github.com');
+          await pageEdge.goto('https://chatgpt.com');
           await pageEdge.waitForTimeout(2000);
           await pageEdge.screenshot({path: 'salam-edge.png', fullPage: true});
           await browserEdge.close();
           
-          // Webkit - سریع
+          // Webkit
           const browserIE = await webkit.launch({headless: true});
           const pageIE = await browserIE.newPage();
-          await pageIE.goto('https://github.com');
+          await pageIE.goto('https://chatgpt.com');
           await pageIE.waitForTimeout(2000);
           await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
           await browserIE.close();
           
-          console.log('✅ salam-edge.png & salam-ie.png - 40 ثانیه');
+          console.log('✅ salam-edge.png & salam-ie.png');
         })().catch(console.error);
         EOF
         
@@ -52,5 +52,5 @@ jobs:
         git config user.name "Actions"
         git config user.email "actions@github.com"
         git add salam-*.png
-        git commit -m "Add salam-edge.png & salam-ie.png" || exit 0
+        git commit -m "Add chatgpt screenshots" || exit 0
         git push
