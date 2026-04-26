@@ -1,71 +1,47 @@
-name: Click Ultra Fast
+name: Click Debug
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  click:
+  debug:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install & Click
+    - name: Debug Info
+      run: |
+        node --version
+        npm --version
+        
+    - name: Test Puppeteer
       run: |
         npm init -y
-        npm i puppeteer@latest
+        npm i puppeteer
+        node -e "console.log('Node OK')"
         
-        cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer');
-        (async () => {
-          console.log("🚀 Launching browser...");
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: [
-              "--no-sandbox",
-              "--disable-setuid-sandbox",
-              "--disable-dev-shm-usage",
-              "--disable-gpu",
-              "--single-process"
-            ]
-          });
-          
-          const page = await browser.newPage();
-          await page.setViewport({width:1920, height:1080});
-          
-          console.log("🌐 Going to chatgpt.com...");
-          await page.goto("https://chatgpt.com", {timeout: 60000});
-          
-          await page.screenshot({path: "before.png"});
-          console.log("📸 Before screenshot OK");
-          
-          await page.mouse.click(831, 589);
-          console.log("🖱️ Clicked!");
-          
-          await page.waitForTimeout(3000);
-          await page.screenshot({path: "after.png"});
-          console.log("📸 After screenshot OK");
-          
-          await browser.close();
-          console.log("✅ Complete!");
-        })().catch(e => {
-          console.error("❌", e.message);
-          process.exit(1);
-        });
-        EOF
-        
-        node click.js
-    
-    - name: Commit
-      if: always()
+    - name: Simple Test
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        ls -la || true
-        git add . || true
-        git commit -m "🎯 Click $(date)" || true
+        node -e "
+        const puppeteer = require('puppeteer');
+        (async()=>{
+          try{
+            const browser = await puppeteer.launch({headless:true,args:['--no-sandbox']});
+            const page = await browser.newPage();
+            await page.goto('https://example.com');
+            await page.screenshot({path:'test.png'});
+            await browser.close();
+            console.log('✅ Puppeteer WORKS!');
+          }catch(e){
+            console.error('❌',e.message);
+          }
+        })()
+        "
+    
+    - name: Commit Test
+      run: |
+        git config user.name "test"
+        git config user.email "test@test"
+        git add test.png || true
+        git commit -m "test" || true
         git push || true
