@@ -1,4 +1,4 @@
-name: Firefox Clicks - Anti-Captcha
+name: Edge Clicks - Safe Site
 on: [push]
 permissions:
   contents: write
@@ -13,16 +13,16 @@ jobs:
       with:
         node-version: 20
     
-    - name: Install Firefox
+    - name: Install Edge
       run: |
         npm init -y
         npm i playwright canvas
-        npx playwright install --with-deps firefox
+        npx playwright install --with-deps msedge
     
     - name: Generate Clicks
       run: |
         cat > clicks.js << 'EOF'
-        const { firefox } = require('playwright');
+        const { microsoftEdge } = require('playwright');
         const { createCanvas, loadImage } = require('canvas');
         const fs = require('fs');
         
@@ -31,44 +31,32 @@ jobs:
           if (fs.existsSync('chrome-state.json')) {
             state = JSON.parse(fs.readFileSync('chrome-state.json', 'utf8'));
           } else {
-            state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/en-US/firefox/new/' };
+            state = { 
+              click: [134, 165], 
+              radius: 1, 
+              wait: '10s', 
+              title: 'Microsoft Edge', 
+              url: 'https://www.microsoft.com/en-us/edge' 
+            };
           }
         } catch(e) { 
-          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Mozilla Firefox', url: 'https://www.mozilla.org/en-US/firefox/new/' };
+          state = { click: [134, 165], radius: 1, wait: '10s', title: 'Microsoft Edge', url: 'https://www.microsoft.com/en-us/edge' };
         }
         
         const [CLICK_X, CLICK_Y] = state.click;
         const WAIT_MS = state.wait === '10s' ? 10000 : 5000;
         
         (async () => {
-          const browser = await firefox.launch({ 
-            headless: true,
-            args: ['--no-sandbox', '--disable-blink-features=AutomationControlled']
-          });
-          const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/120.0',
-            viewport: { width: 1920, height: 1080 }
-          });
-          const page = await context.newPage();
+          const browser = await microsoftEdge.launch({ headless: true });
+          const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
           
-          // Anti-detection
-          await page.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            delete navigator.__proto__.webdriver;
-          });
-          
-          await page.goto(state.url, { 
-            waitUntil: 'networkidle',
-            timeout: 30000 
-          });
-          
-          await page.waitForTimeout(3000);
+          await page.goto(state.url, { waitUntil: 'networkidle' });
           await page.mouse.click(CLICK_X, CLICK_Y);
           
           await page.waitForTimeout(WAIT_MS);
-          await page.screenshot({path: 'firefox-clicks.png', fullPage: true});
+          await page.screenshot({ path: 'edge-clicks.png', fullPage: true });
           
-          const img = await loadImage('firefox-clicks.png');
+          const img = await loadImage('edge-clicks.png');
           const canvas = createCanvas(img.width, img.height);
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
@@ -83,14 +71,14 @@ jobs:
           ctx.lineWidth = 2;
           ctx.stroke();
           
-          fs.writeFileSync('firefox-clicks.png', canvas.toBuffer('image/png'));
+          fs.writeFileSync('edge-clicks.png', canvas.toBuffer('image/png'));
           
           state.title = await page.title();
           state.url = page.url();
           state.time = new Date().toISOString();
           
           fs.writeFileSync('chrome-state.json', JSON.stringify(state, null, 2));
-          console.log(`✅ Firefox: ${state.title}`);
+          console.log(`✅ Edge: ${state.title}`);
           await browser.close();
         })().catch(console.error);
         EOF
@@ -100,5 +88,5 @@ jobs:
     - name: Commit Files
       uses: EndBug/add-and-commit@v10
       with:
-        add: 'firefox-clicks.png chrome-state.json'
-        message: "🦊 Firefox anti-captcha screenshot"
+        add: 'edge-clicks.png chrome-state.json'
+        message: "🟦 Edge safe screenshot"
