@@ -16,9 +16,12 @@ jobs:
       with:
         node-version: 20
     
-    - name: Install & Run
+    - name: Generate Screenshots
       run: |
-        npm init -y && npm i playwright
+        npm init -y
+        npm i playwright
+        npx playwright install --with-deps chromium webkit
+        
         cat > test.js << 'EOF'
         $const { chromium, webkit } = require('playwright')$;
         $const fs = require('fs')$;
@@ -26,36 +29,37 @@ jobs:
         $(async () => {$
           $let config = { url: 'https://chatgpt.com' }$;
           $if (fs.existsSync('config.json')) {$
-            $config = JSON.parse(fs.readFileSync('config.json', 'utf8'))$;
-            $console.log(`📁$ از config.json: {config.url}`);
+            $config = JSON.parse(fs.readFileSync('config.json'))$;
+            $console.log(`📁 config$: {config.url}`);
           }
           
-          // Edge
-          const browserEdge = await chromium.launch({channel: 'msedge', headless: true});
+          // Edge screenshot
+          const browserEdge = await chromium.launch({ headless: true });
           const pageEdge = await browserEdge.newPage();
           await pageEdge.goto(config.url);
-          await pageEdge.waitForTimeout(2000);
-          await pageEdge.screenshot({path: 'salam-edge.png', fullPage: true});
+          await pageEdge.waitForTimeout(3000);
+          await pageEdge.screenshot({ path: 'salam-edge.png', fullPage: true });
           await browserEdge.close();
           
-          // Webkit
-          const browserIE = await webkit.launch({headless: true});
-          const pageIE = await browserIE.newPage();
-          await pageIE.goto(config.url);
-          await pageIE.waitForTimeout(2000);
-          await pageIE.screenshot({path: 'salam-ie.png', fullPage: true});
-          await browserIE.close();
+          // Webkit screenshot
+          const browserWebkit = await webkit.launch({ headless: true });
+          const pageWebkit = await browserWebkit.newPage();
+          await pageWebkit.goto(config.url);
+          await pageWebkit.waitForTimeout(3000);
+          await pageWebkit.screenshot({ path: 'salam-webkit.png', fullPage: true });
+          await browserWebkit.close();
           
-          config.url = 'https://chatgpt.com';
+          // Save config
           fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-          console.log('✅ تمام');
-        })().catch(console.error);
+          
+          console.log('✅ screenshots ready');
+        })();
         EOF
         
-        timeout 90s node test.js
+        node test.js
     
-    - name: Commit & Push
-      uses: stefanzweifel/git-auto-commit-action@v5
+    - name: Auto Commit
+      uses: EndBug/add-and-commit@v9
       with:
-        commit_message: Add screenshots + config.json
-        file_pattern: '*.png *.json'
+        add: 'salam-*.png config.json'
+        message: 'Add screenshots + config.json'
