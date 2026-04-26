@@ -9,8 +9,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}$
-        fetch-depth: 0  # برای commit های درست
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
     
     - uses: actions/setup-node@v4
       with:
@@ -25,42 +25,33 @@ jobs:
     - name: Generate Screenshots
       run: |
         cat > test.js << 'EOF'
-        $const { chromium, webkit } = require('playwright')$;
-        $const fs = require('fs')$;
-        $(async () => {$
-          $let url = 'https://chatgpt.com'$;
-          $if (fs.existsSync('config.json')) {$
-            $url = JSON.parse(fs.readFileSync('config.json')).url || url$;
+        const { chromium, webkit } = require('playwright');
+        const fs = require('fs');
+        (async () => {
+          let url = 'https://chatgpt.com';
+          if (fs.existsSync('config.json')) {
+            url = JSON.parse(fs.readFileSync('config.json')).url || url;
           }
-          $const b1 = await chromium.launch({headless:true})$;
-          $const p1 = await b1.newPage()$;
-          $await p1.goto(url)$;
-          $await p1.waitForTimeout(3000)$;
-          $await p1.screenshot({path:'salam.png', fullPage:true})$;
-          $await b1.close()$;
-          $const b2 = await webkit.launch({headless:true})$;
-          $const p2 = await b2.newPage()$;
-          $await p2.goto(url)$;
-          $await p2.waitForTimeout(3000)$;
-          $await p2.screenshot({path:'salam-ie.png', fullPage:true})$;
-          $await b2.close()$;
-          $fs.writeFileSync('config.json', JSON.stringify({url},null,2))$;
-          $console.log('✅ screenshots done')$;
+          const b1 = await chromium.launch({headless:true});
+          const p1 = await b1.newPage();
+          await p1.goto(url);
+          await p1.waitForTimeout(3000);
+          await p1.screenshot({path:'salam.png', fullPage:true});
+          await b1.close();
+          const b2 = await webkit.launch({headless:true});
+          const p2 = await b2.newPage();
+          await p2.goto(url);
+          await p2.waitForTimeout(3000);
+          await p2.screenshot({path:'salam-ie.png', fullPage:true});
+          await b2.close();
+          fs.writeFileSync('config.json', JSON.stringify({url},null,2));
+          console.log('✅ screenshots done');
         })();
         EOF
         node test.js
     
-    - name: List files
-      run: ls -la *.png *.json
-    
     - name: Commit & Push
-      run: |
-        $git config --global user.name "github-actions[bot]"$
-        $git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"$
-        git add *.png *.json || true
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-        else
-          $git commit -m "Add screenshots [skip ci]"$
-          git push
-        fi
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "Add screenshots [skip ci]"
+        file_pattern: '*.png *.json'
