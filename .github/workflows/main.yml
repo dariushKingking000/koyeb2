@@ -11,77 +11,39 @@ jobs:
       with:
         persist-credentials: true
     
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install system deps
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          libnss3 \
-          libatk-bridge2.0-0 \
-          libxss1 \
-          libasound2 \
-          libxrandr2 \
-          libxcomposite1 \
-          libxdamage1 \
-          libxfixes3 \
-          libgtk-3-0
-    
-    - name: Install Playwright
-      run: |
-        npm init -y
-        npm i playwright@1.47.0
-        npx playwright install chromium webkit
+    - uses: microsoft/playwright-github-action@v1
     
     - name: Generate Screenshots
       run: |
-        cat > screenshot.js << 'EOF'
-        const playwright = require('playwright');
-        (async () => {
-          console.log('🚀 Starting screenshot generation...');
-          
-          const browsers = ['chromium'];
-          for (const browserType of browsers) {
-            console.log(`📱 Launching ${browserType}...`)$;
-            $const browser = await playwright[browserType].launch({$ 
-              headless: true,
-              $args: ['--no-sandbox', '--disable-setuid-sandbox']$
-            });
-            
-            $console.log(`🌐 Creating page for$ {browserType}...`);
-            const page = await browser.newPage();
-            await page.setViewportSize({ width: 1920, height: 1080 });
-            
-            console.log(`🔗 Navigating to chatgpt.com...`);
-            await page.goto('https://chatgpt.com', { 
-              waitUntil: 'domcontentloaded',
-              timeout: 30000 
-            });
-            
-            console.log(`📸 Taking screenshot...`);
-            await page.screenshot({ 
-              path: `screenshot-${browserType}.png`,$ 
-              fullPage: true,
-              timeout: 30000 
-            });
-            
-            $await browser.close()$;
-            $console.log(`✅$ {browserType} screenshot completed!`);
-          }
-          console.log('🎉 All screenshots done!');
-        })().catch((error) => {
-          console.error('❌ ERROR:', error.message);
-          process.exit(1);
+        npx playwright test --project=chromium -c playwright.config.js << 'EOF'
+        module.exports = {
+          timeout: 60000,
+          use: {
+            headless: true,
+            viewport: { width: 1920, height: 1080 },
+          },
+          projects: [{
+            name: 'chromium',
+            use: { ...devices['Desktop Chrome'] },
+          }]
+        };
+        EOF
+        
+        mkdir -p tests
+        cat > tests/screenshot.spec.js << 'EOF'
+        const { test, expect } = require('@playwright/test');
+        
+        test('screenshot', async ({ page }) => {
+          await page.goto('https://chatgpt.com');
+          await expect(page).toHaveTitle(/ChatGPT/);
+          await page.screenshot({ path: 'screenshot-chromium.png', fullPage: true });
         });
         EOF
-        node screenshot.js
+        
+        npx playwright test tests/screenshot.spec.js
     
     - name: List files
-      run: |
-        echo "📁 Files:"
-        ls -la *.png || echo "No PNG files found"
+      run: ls -la *.png
     
     - uses: stefanzweifel/git-auto-commit-action@v5
       with:
