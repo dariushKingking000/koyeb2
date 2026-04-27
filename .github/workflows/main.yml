@@ -6,21 +6,24 @@ permissions:
 jobs:
   click:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15  # ⬆️ افزایش
     steps:
     - uses: actions/checkout@v4
     
     - uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: stable
     
-    - name: Click X,Y
+    - name: Install & Click
       run: |
         npm init -y
-        npm i puppeteer
+        npm i puppeteer@latest
+        npx puppeteer browsers install chrome
+        
         cat > click.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
-        // مختصات کلیک (134, 254)
         const config = {
           url: 'https://chatgpt.com',
           x: 134,
@@ -30,49 +33,71 @@ jobs:
         fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
         
         (async () => {
-          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
+          console.log('🚀 Launching browser...');
+          
+          const browser = await puppeteer.launch({
+            headless: true,
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--disable-web-security',
+              '--disable-features=VizDisplayCompositor'
+            ],
+            timeout: 30000
+          });
+          
           const page = await browser.newPage();
           await page.setViewport({width: 1920, height: 1080});
-          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 20000});
           
-          // 📸 قبل از کلیک
-          await page.screenshot({path: 'before-click.png', fullPage: true});
+          console.log(`🌐 Navigating to ${config.url}...`)$;
+          $await page.goto(config.url, {$ 
+            waitUntil: 'domcontentloaded',  // ✅ سریع‌تر
+            timeout: 60000 
+          });
           
-          // 🖱️ کلیک دقیق X,Y
-          await page.mouse.click(config.x, config.y);
+          // 📸 قبل
+          $await page.screenshot({path: 'before-click.png', fullPage: true})$;
+          $console.log('📸 Screenshot before')$;
           
-          // 🔴 کوچکترین دایره ممکن
-          await page.evaluate((x, y) => {
-            const circle = document.createElement('div');
-            circle.style.position = 'fixed';
-            circle.style.left = (x - 2) + 'px';
-            circle.style.top = (y - 2) + 'px';
-            circle.style.width = '4px';
-            circle.style.height = '4px';
-            circle.style.backgroundColor = 'red';
-            circle.style.borderRadius = '50%';
-            circle.style.border = '1px solid white';
-            circle.style.pointerEvents = 'none';
-            circle.style.zIndex = '99999';
-            document.body.appendChild(circle);
-          }, config.x, config.y);
+          // 🖱️ کلیک
+          $await page.mouse.click(config.x, config.y)$;
+          $await page.waitForTimeout(1000);  //$ صبر 1s
           
-          console.log(`✅ Clicked at (${config.x}, ${config.y})`);
+          // 🔴 دایره
+          $await page.evaluate((x, y) => {$
+            $const circle = document.createElement('div')$;
+            $circle.style.cssText = `$
+              position:fixed;left:{x-2}px;top:${y-2}px$;
+              width:4px;height:4px;background:red;
+              border-radius:50%;border:1px solid white;
+              pointer-events:none;z-index:99999;
+            `;
+            $document.body.appendChild(circle)$;
+          $}, config.x, config.y)$;
           
-          // 📸 بعد از کلیک + دایره
+          $console.log(`✅ Clicked at (${config.x}, ${config.y})`);
+          
+          // 📸 بعد
           await page.screenshot({path: 'after-click.png', fullPage: true});
+          console.log('📸 Screenshot after');
+          
           await browser.close();
+          console.log('🏁 Done!');
         })().catch(e => {
           console.error('❌ Error:', e.message);
+          console.error('Stack:', e.stack);
           process.exit(1);
         });
         EOF
+        
         node click.js
     
-    - name: Commit
+    - name: Commit Results
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add *.png config.json
-        git commit -m "🎯 Click (134,254) [skip ci]" || exit 0
-        git push || exit 0
+        git add *.png config.json click.js
+        git commit -m "🎯 Click (134,254) [skip ci]" || echo "No changes"
+        git push || echo "Push skipped"
