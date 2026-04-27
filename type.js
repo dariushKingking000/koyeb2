@@ -1,0 +1,43 @@
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
+
+// 👇 تغییر بده
+const TEXT_TO_TYPE = 'سلام! چطوری؟';
+const CLICK_X = 134;
+const CLICK_Y = 254;
+
+(async () => {
+  try {
+    const browser = await puppeteer.launch({
+      headless: true,
+      userDataDir: './user_data',
+      executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const page = await browser.newPage();
+    await page.setViewport({width:1366, height:768});
+    
+    console.log('Loading chatgpt.com...');
+    await page.goto('https://chatgpt.com', {timeout: 60000});
+    await new Promise(r => setTimeout(r, 5000));
+    
+    await page.screenshot({path: 'before_click.png'});
+    
+    console.log('Clicking at (' + CLICK_X + ', ' + CLICK_Y + ')...');
+    await page.mouse.click(CLICK_X, CLICK_Y);
+    await new Promise(r => setTimeout(r, 5000));  // 5 ثانیه
+    
+    await page.screenshot({path: 'after_click.png'});
+    
+    console.log('Typing: ' + TEXT_TO_TYPE);
+    await page.keyboard.type(TEXT_TO_TYPE, {delay: 100});
+    await new Promise(r => setTimeout(r, 3000));
+    
+    await page.screenshot({path: 'after_type.png'});
+    await browser.close();
+    console.log('✅ Typing completed!');
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+  }
+})();
