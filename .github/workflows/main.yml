@@ -1,8 +1,7 @@
-name: Stealth Click & COMMIT
+name: Stealth Click FIXED
 on: [push]
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   click:
@@ -10,12 +9,15 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@v1.1.0
+      
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
         
-    - name: Install
+    - name: Install Puppeteer
       run: |
         npm init -y
         npm i puppeteer@latest puppeteer-extra@latest puppeteer-extra-plugin-stealth@latest
@@ -23,27 +25,71 @@ jobs:
     - name: Click Script
       run: |
         cat > click.js << 'EOF'
-        const puppeteer=require('puppeteer-extra');const StealthPlugin=require('puppeteer-extra-plugin-stealth');puppeteer.use(StealthPlugin());(async()=>{const b=await puppeteer.launch({headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});const p=await b.newPage();await p.setViewport({width:1366,height:768});console.log('Loading...');await p.goto('https://chatgpt.com',{waitUntil:'domcontentloaded',timeout:6e4});await new Promise(r=>setTimeout(r,5e3));await p.screenshot({path:'before.png',fullPage:true});await p.mouse.click(134,254);await p.evaluate(x=>{const c=document.createElement('div');c.style.cssText='position:fixed;left:'+(x-10)+'px;top:244px;width:20px;height:20px;background:#f00;border-radius:50%;z-index:99999;box-shadow:0 0 10px #f00';document.body.appendChild(c);},134);await new Promise(r=>setTimeout(r,3e3));await p.screenshot({path:'after.png',fullPage:true});await b.close();console.log('Done!');})();
+        const puppeteer = require('puppeteer-extra');
+        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+        puppeteer.use(StealthPlugin());
+        
+        (async () => {
+          console.log('🚀 Launching Chrome...');
+          
+          const browser = await puppeteer.launch({
+            headless: true,
+            executablePath: process.env.CHROME_BIN,
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu'
+            ]
+          });
+          
+          const page = await browser.newPage();
+          await page.setViewport({width: 1366, height: 768});
+          
+          console.log('🌐 ChatGPT...');
+          await page.goto('https://chatgpt.com', {
+            waitUntil: 'domcontentloaded',
+            timeout: 60000
+          });
+          
+          await new Promise(r => setTimeout(r, 5000));
+          
+          await page.screenshot({path: 'before.png', fullPage: true});
+          
+          console.log('🖱️ Click 134,254');
+          await page.mouse.click(134, 254);
+          
+          await page.evaluate(function(x) {
+            var circle = document.createElement('div');
+            circle.style.cssText = 'position:fixed;left:'+(x-10)+'px;top:244px;width:20px;height:20px;background:red;border-radius:50%;z-index:99999;box-shadow:0 0 10px red';
+            document.body.appendChild(circle);
+          }, 134);
+          
+          await new Promise(r => setTimeout(r, 3000));
+          
+          await page.screenshot({path: 'after.png', fullPage: true});
+          
+          console.log('✅ COMPLETE');
+          await browser.close();
+        })().catch(console.error);
         EOF
         
-    - name: Execute Click
+    - name: Run Click
       run: node click.js
-      
-    - name: FORCE COMMIT FILES
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add before.png after.png click.js package*.json || true
-        git commit -m "🎯 CLICK COMPLETE
-
-        📸 Screenshots added
-        🖱️ Coords: 134,254
-        # ${{ github.run_id }}" || true$
-        git push https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }} || true
+      env:
+        CHROME_BIN: ${{ steps.chrome.outputs.executable_path }}$
         
-    - name: Upload Backup
+    - name: FORCE COMMIT
+      run: |
+        $git config user.name "github-actions[bot]"$
+        $git config user.email "41898282+github-actions[bot]@users.noreply.github.com"$
+        git add *.png || true
+        git commit -m "🎯 Click Results - (date)" || true
+        git push || true
+        
+    - name: Artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: screenshots-${{ github.run_id }}
+        name: screenshots
         path: '*.png'
