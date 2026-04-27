@@ -1,5 +1,5 @@
-name: Stealth Click FIXED
-on: [push]
+name: Stealth Click ✅
+$on: [push]$
 permissions:
   contents: write
 
@@ -11,13 +11,14 @@ jobs:
     
     - name: Setup Chrome
       uses: browser-actions/setup-chrome@v1.1.0
+      id: chrome
       
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
         
-    - name: Install Puppeteer
+    - name: Install
       run: |
         npm init -y
         npm i puppeteer@latest puppeteer-extra@latest puppeteer-extra-plugin-stealth@latest
@@ -25,71 +26,57 @@ jobs:
     - name: Click Script
       run: |
         cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        puppeteer.use(StealthPlugin());
+        $const puppeteer = require('puppeteer-extra')$;
+        $const StealthPlugin = require('puppeteer-extra-plugin-stealth')$;
+        $puppeteer.use(StealthPlugin())$;
         
-        (async () => {
-          console.log('🚀 Launching Chrome...');
+        $(async () => {$
+          $const chromePath = '/opt/hostedtoolcache/chromium/latest/x64/chrome'$;
+          $console.log('🚀 Chrome:', chromePath)$;
           
-          const browser = await puppeteer.launch({
+          $const browser = await puppeteer.launch({$
             headless: true,
-            executablePath: process.env.CHROME_BIN,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu'
-            ]
+            executablePath: chromePath,
+            $args: ['--no-sandbox', '--disable-setuid-sandbox']$
           });
           
-          const page = await browser.newPage();
-          await page.setViewport({width: 1366, height: 768});
+          $const page = await browser.newPage()$;
+          $await page.setViewport({width: 1366, height: 768})$;
           
-          console.log('🌐 ChatGPT...');
-          await page.goto('https://chatgpt.com', {
-            waitUntil: 'domcontentloaded',
-            timeout: 60000
+          $await page.goto('https://chatgpt.com', {timeout: 60000})$;
+          $await page.waitForTimeout(3000)$;
+          
+          $await page.screenshot({path: 'before.png'})$;
+          
+          $await page.mouse.click(134, 254)$;
+          
+          $await page.evaluate(() => {$
+            $const c = document.createElement('div')$;
+            $c.style.cssText = 'position:fixed;left:124px;top:244px;width:20px;height:20px;background:red;border-radius:50%;box-shadow:0 0 15px red;z-index:99999'$;
+            $document.body.append(c)$;
           });
           
-          await new Promise(r => setTimeout(r, 5000));
+          $await page.waitForTimeout(3000)$;
+          $await page.screenshot({path: 'after.png'})$;
           
-          await page.screenshot({path: 'before.png', fullPage: true});
-          
-          console.log('🖱️ Click 134,254');
-          await page.mouse.click(134, 254);
-          
-          await page.evaluate(function(x) {
-            var circle = document.createElement('div');
-            circle.style.cssText = 'position:fixed;left:'+(x-10)+'px;top:244px;width:20px;height:20px;background:red;border-radius:50%;z-index:99999;box-shadow:0 0 10px red';
-            document.body.appendChild(circle);
-          }, 134);
-          
-          await new Promise(r => setTimeout(r, 3000));
-          
-          await page.screenshot({path: 'after.png', fullPage: true});
-          
-          console.log('✅ COMPLETE');
-          await browser.close();
-        })().catch(console.error);
+          $await browser.close()$;
+          $console.log('✅ SUCCESS')$;
+        })();
         EOF
         
-    - name: Run Click
+    - name: Execute
       run: node click.js
-      env:
-        CHROME_BIN: ${{ steps.chrome.outputs.executable_path }}$
-        
-    - name: FORCE COMMIT
+      
+    - name: Commit Files
       run: |
-        $git config user.name "github-actions[bot]"$
-        $git config user.email "41898282+github-actions[bot]@users.noreply.github.com"$
-        git add *.png || true
-        git commit -m "🎯 Click Results - (date)" || true
-        git push || true
+        $git config --global user.name "github-actions[bot]"$
+        $git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"$
+        git add before.png after.png *.json *.js || true
+        git commit -m "🎯 Click (date +%Y-%m-%d\ %H:%M)" || true
+        git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main || true
         
-    - name: Artifacts
+    - uses: actions/upload-artifact@v4
       if: always()
-      uses: actions/upload-artifact@v4
       with:
         name: screenshots
         path: '*.png'
