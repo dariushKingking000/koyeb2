@@ -1,21 +1,20 @@
 {
   "name": "koyeb2",
   "version": "1.0.0",
-  "description": "E2E Tests",
-  "main": "index.js",
-  "scripts": {
-    "test": "playwright test"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.41.2"
-  },
+  "description": "test",
+  "main": "click.js",
   "directories": {
     "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "puppeteer": "^24.42.0"
+    "puppeteer-core": "^24.42.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }
