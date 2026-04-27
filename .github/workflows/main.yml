@@ -33,7 +33,7 @@ jobs:
         const StealthPlugin = require('puppeteer-extra-plugin-stealth');
         puppeteer.use(StealthPlugin());
         
-        // تغییر بده 👇
+        // 👇 تغییر بده
         const TEXT_TO_TYPE = 'سلام! چطوری؟';
         const CLICK_X = 134;
         const CLICK_Y = 254;
@@ -57,7 +57,7 @@ jobs:
             
             console.log('Clicking at (' + CLICK_X + ', ' + CLICK_Y + ')...');
             await page.mouse.click(CLICK_X, CLICK_Y);
-            await new Promise(r => setTimeout(r, 5000));
+            await new Promise(r => setTimeout(r, 5000));  // 5 ثانیه
             
             await page.screenshot({path: 'after_click.png'});
             
@@ -67,9 +67,9 @@ jobs:
             
             await page.screenshot({path: 'after_type.png'});
             await browser.close();
-            console.log('Typing completed!');
+            console.log('✅ Typing completed!');
           } catch (error) {
-            console.error('Error:', error.message);
+            console.error('❌ Error:', error.message);
           }
         })();
         EOF
@@ -81,6 +81,7 @@ jobs:
       run: |
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        git add *.png type.js package*.json user_data || true
+        git add *.png type.js package*.json || true
+        git rm -r --cached user_data || true  # ❌ secrets block
         git commit -m "Type $(date +%Y-%m-%d\ %H:%M:%S)" || true
         git push origin HEAD:main || true
