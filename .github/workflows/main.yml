@@ -1,144 +1,22 @@
-name: Anti-Cloudflare Click
-on: 
-  push:
-    branches: [ main ]
-permissions:
-  contents: write
+name: Stealth Click
+on: [push]
+permissions: { contents: write }
 
 jobs:
-  stealth-click:
+  click:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-        
-    - name: Install Dependencies
-      run: |
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with: { node-version: 20 }
+    - run: |
         npm init -y
         npm i puppeteer@latest puppeteer-extra@latest puppeteer-extra-plugin-stealth@latest
-        npm audit fix --force
-        
-    - name: Create Click Script
-      run: |
-        cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        const fs = require('fs');
-        
-        puppeteer.use(StealthPlugin());
-        
-        const config = {
-          url: 'https://chatgpt.com',
-          x: 134, 
-          y: 254,
-          timestamp: new Date().toISOString()
-        };
-        
-        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-        
-        (async () => {
-          console.log('🚀 Stealth Browser Launch...');
-          
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--disable-web-security',
-              '--disable-features=VizDisplayCompositor'
-            ]
-          });
-          
-          const page = await browser.newPage();
-          await page.setViewport({ width: 1366, height: 768 });
-          
-          console.log('🌐 Navigating to ChatGPT...');
-          await page.goto(config.url, { 
-            waitUntil: 'domcontentloaded', 
-            timeout: 60000 
-          });
-          
-          console.log('⏳ Waiting for Cloudflare...');
-          await new Promise(r => setTimeout(r, 8000));
-          
-          // Before screenshot
-          await page.screenshot({ path: 'before.png', fullPage: true });
-          console.log('📸 before.png saved');
-          
-          // CLICK with visual marker
-          console.log(`🖱️ Clicking (${config.x}, ${config.y})`);
-          await page.mouse.click(config.x, config.y);
-          
-          // Add red circle marker
-          await page.evaluate((x, y) => {
-            const circle = document.createElement('div');
-            circle.id = 'click-marker';
-            circle.style.cssText = `
-              position: fixed !important;
-              left: ${x-10}px !important$;
-              top: {y-10}px !important;
-              width: 20px !important;
-              height: 20px !important;
-              background: #ff0000cc !important;
-              border-radius: 50% !important;
-              border: 3px solid #ffffff !important;
-              box-shadow: 0 0 15px #ff0000 !important;
-              z-index: 999999 !important;
-              pointer-events: none !important;
-            `;
-            document.body.appendChild(circle);
-          }, config.x, config.y);
-          
-          await new Promise(r => setTimeout(r, 3000));
-          
-          // After screenshot
-          await page.screenshot({ path: 'after.png', fullPage: true });
-          console.log('📸 after.png saved');
-          
-          console.log('✅ Click Complete!');
-          await browser.close();
-          
-          fs.writeFileSync('status.txt', `SUCCESS\nClicked: ${config.x},${config.y}\nTime: ${config.timestamp}`)$;
-        $})().catch(e => {$
-          $console.error('❌ ERROR:', e.message)$;
-          $fs.writeFileSync('status.txt', `ERROR$: {e.message}`);
-          process.exit(1);
-        });
-        EOF
-        
-    - name: Execute Stealth Click
-      run: node click.js
-      
-    - name: Upload Artifacts (Backup)
-      if: always()
-      uses: actions/upload-artifact@v4
+    - run: |
+        echo 'const puppeteer = require("puppeteer");(async()=>{const b=await puppeteer.launch({headless:true,args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1366,height:768});await p.goto("https://chatgpt.com",{timeout:6e4});await new Promise(r=>setTimeout(r,5e3));await p.screenshot({path:"before.png"});await p.mouse.click(134,254);await new Promise(r=>setTimeout(r,3e3));await p.screenshot({path:"after.png"});await b.close();console.log("✅");})().catch(console.error);' > click.js
+      shell: bash
+    - run: node click.js
+    - uses: EndBug/add-and-commit@v9
       with:
-        name: click-screenshots-${{ github.run_id }}$
-        path: |
-          *.png
-          *.json
-          status.txt
-          
-    - name: Commit Results to Repo
-      uses: EndBug/add-and-commit@v9
-      with:
-        add: |
-          before.png
-          after.png
-          config.json
-          status.txt
-          click.js
-        message: |
-          🎯 Stealth Click Results
-          
-          ✅ Coords: 134,254
-          📅 {{ github.run_id }}
-          [skip ci]
+        add: '*.png'
+        message: '🎯 Click Results'
