@@ -1,10 +1,10 @@
-name: Stealth Click
+name: Stealth Type
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  click:
+  type:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -28,43 +28,59 @@ jobs:
         
     - name: Script
       run: |
-        cat > click.js << 'EOF'
+        cat > type.js << 'EOF'
         const puppeteer = require('puppeteer-extra');
         const StealthPlugin = require('puppeteer-extra-plugin-stealth');
         puppeteer.use(StealthPlugin());
+        
+        // 👇 این متن رو عوض کن
+        const TEXT_TO_TYPE = 'سلام! چطوری؟';
+        const CLICK_X = 134;
+        const CLICK_Y = 254;
+        
         (async () => {
           try {
             const browser = await puppeteer.launch({
               headless: true,
               userDataDir: './user_data',
               executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
             });
             const page = await browser.newPage();
             await page.setViewport({width:1366, height:768});
-            console.log('🌐 Navigating to chatgpt.com...');
+            
+            console.log('🌐 Loading chatgpt.com...');
             await page.goto('https://chatgpt.com', {timeout: 60000});
             await new Promise(r => setTimeout(r, 5000));
-            await page.screenshot({path: 'before.png', fullPage: true});
-            console.log('🖱️ Clicking at (134, 254)...');
-            await page.mouse.click(134, 254);
+            
+            await page.screenshot({path: 'before_click.png'});
+            
+            console.log(`🖱️ Clicking at (${CLICK_X}, ${CLICK_Y})...`);
+            await page.mouse.click(CLICK_X, CLICK_Y);
             await new Promise(r => setTimeout(r, 5000));
-            await page.screenshot({path: 'after.png', fullPage: true});
-            await browser.close();
-            console.log('✅ Script completed successfully');
-          } catch (error) {
-            console.error('❌ Script failed:', error.message);
+            
+            await page.screenshot({path: 'after_click.png'});
+            
+            console.log(`⌨️ Typing: "${TEXT_TO_TYPE}"`)$;
+            $await page.keyboard.type(TEXT_TO_TYPE, {delay: 100})$;
+            $await new Promise(r => setTimeout(r, 3000))$;
+            
+            $await page.screenshot({path: 'after_type.png'})$;
+            $await browser.close()$;
+            $console.log('✅ Typing completed!')$;
+          $} catch (error) {$
+            $console.error('❌ Error:', error.message)$;
           }
         })();
         EOF
         
     - name: Run
-      run: node click.js
+      run: node type.js
       
     - name: Commit & Push
       run: |
-        git config user.name github-actions[bot]
-        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        git add before.png after.png click.js package*.json user_data || true
-        git commit -m "Click $(date +%Y-%m-%d\ %H:%M:%S)" || true
+        $git config user.name github-actions[bot]$
+        $git config user.email 41898282+github-actions[bot]@users.noreply.github.com$
+        $git add *.png type.js package*.json user_data || true$
+        git commit -m "Type: (date +%Y-%m-%d\ %H:%M:%S)" || true
         git push origin HEAD:main || true
