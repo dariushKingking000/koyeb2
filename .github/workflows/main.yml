@@ -1,4 +1,4 @@
-name: Stealth Click ✅
+name: Stealth Click FINAL
 on: [push]
 permissions:
   contents: write
@@ -28,63 +28,47 @@ jobs:
         const puppeteer = require('puppeteer-extra');
         const StealthPlugin = require('puppeteer-extra-plugin-stealth');
         puppeteer.use(StealthPlugin());
-        
         (async () => {
           const chromePath = '/opt/hostedtoolcache/chromium/latest/x64/chrome';
           console.log('🚀 Chrome:', chromePath);
-          
           const browser = await puppeteer.launch({
             headless: true,
             executablePath: chromePath,
             args: ['--no-sandbox', '--disable-setuid-sandbox']
           });
-          
           const page = await browser.newPage();
           await page.setViewport({width: 1366, height: 768});
-          
-          console.log('🌐 Loading...');
           await page.goto('https://chatgpt.com', {timeout: 60000});
-          
-          // Wait 3s
           await new Promise(r => setTimeout(r, 3000));
-          
-          console.log('📸 Before');
           await page.screenshot({path: 'before.png'});
-          
-          console.log('🖱️ Click!');
           await page.mouse.click(134, 254);
-          
-          // Red circle marker
           await page.evaluate(() => {
             const c = document.createElement('div');
             c.style.cssText = 'position:fixed;left:124px;top:244px;width:20px;height:20px;background:#f00;border-radius:50%;box-shadow:0 0 15px #f00;z-index:99999';
             document.body.append(c);
           });
-          
-          // Wait 3s
           await new Promise(r => setTimeout(r, 3000));
-          
-          console.log('📸 After');
           await page.screenshot({path: 'after.png'});
-          
           await browser.close();
-          console.log('✅ SUCCESS - Files ready!');
+          console.log('✅ DONE');
         })();
         EOF
         
     - name: Run Click
       run: node click.js
       
-    - name: Commit Files
+    - name: FORCE PUSH TO REPO
       run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add before.png after.png click.js package* || true
-        git commit -m "🎯 Click $(date +%Y-%m-%d\ %H:%M)" || true$
-        git push https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main || true
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add before.png after.png click.js package*.json || true
+        git commit -m "🎯 Click $(date +%Y%m%d-%H%M)" || exit 0$
+        git remote set-url origin https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git$
+        git push origin HEAD:{{ github.ref_name }} || exit 0
         
-    - uses: actions/upload-artifact@v4
+    - name: Upload Screenshots
       if: always()
+      uses: actions/upload-artifact@v4
       with:
         name: screenshots
         path: '*.png'
