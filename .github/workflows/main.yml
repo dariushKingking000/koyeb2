@@ -21,7 +21,7 @@ jobs:
       run: |
         rm -rf node_modules package*.json || true
         npm init -y
-        npm i puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth
+        npm i puppeteer-core@latest puppeteer-extra puppeteer-extra-plugin-stealth
         
     - name: Script
       run: |
@@ -38,11 +38,11 @@ jobs:
             });
             const page = await browser.newPage();
             await page.setViewport({width:1366, height:768});
-            await page.goto('https://chatgpt.com', {timeout: 60000, waitUntil: 'networkidle0'});
-            await page.waitForTimeout(3000);
+            await page.goto('https://chatgpt.com', {timeout: 60000});
+            await new Promise(r => setTimeout(r, 3000));
             await page.screenshot({path: 'before.png', fullPage: true});
             await page.mouse.click(134, 254);
-            await page.waitForTimeout(3000);
+            await new Promise(r => setTimeout(r, 3000));
             await page.screenshot({path: 'after.png', fullPage: true});
             await browser.close();
             console.log('✅ Script completed successfully');
@@ -63,8 +63,3 @@ jobs:
         git add before.png after.png click.js package*.json || true
         git commit -m "Click $(date +%Y-%m-%d\ %H:%M:%S)" || true
         git push origin HEAD:main || true
-        
-    - name: Verify Files
-      run: |
-        ls -la *.png || true
-        echo "✅ Workflow completed!"
