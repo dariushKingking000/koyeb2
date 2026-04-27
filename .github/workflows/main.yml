@@ -1,22 +1,49 @@
-name: Stealth Click
+name: Stealth Click & COMMIT
 on: [push]
-permissions: { contents: write }
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   click:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with: { node-version: 20 }
-    - run: |
+    
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        
+    - name: Install
+      run: |
         npm init -y
         npm i puppeteer@latest puppeteer-extra@latest puppeteer-extra-plugin-stealth@latest
-    - run: |
-        echo 'const puppeteer = require("puppeteer");(async()=>{const b=await puppeteer.launch({headless:true,args:["--no-sandbox"]});const p=await b.newPage();await p.setViewport({width:1366,height:768});await p.goto("https://chatgpt.com",{timeout:6e4});await new Promise(r=>setTimeout(r,5e3));await p.screenshot({path:"before.png"});await p.mouse.click(134,254);await new Promise(r=>setTimeout(r,3e3));await p.screenshot({path:"after.png"});await b.close();console.log("✅");})().catch(console.error);' > click.js
-      shell: bash
-    - run: node click.js
-    - uses: EndBug/add-and-commit@v9
+        
+    - name: Click Script
+      run: |
+        cat > click.js << 'EOF'
+        const puppeteer=require('puppeteer-extra');const StealthPlugin=require('puppeteer-extra-plugin-stealth');puppeteer.use(StealthPlugin());(async()=>{const b=await puppeteer.launch({headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});const p=await b.newPage();await p.setViewport({width:1366,height:768});console.log('Loading...');await p.goto('https://chatgpt.com',{waitUntil:'domcontentloaded',timeout:6e4});await new Promise(r=>setTimeout(r,5e3));await p.screenshot({path:'before.png',fullPage:true});await p.mouse.click(134,254);await p.evaluate(x=>{const c=document.createElement('div');c.style.cssText='position:fixed;left:'+(x-10)+'px;top:244px;width:20px;height:20px;background:#f00;border-radius:50%;z-index:99999;box-shadow:0 0 10px #f00';document.body.appendChild(c);},134);await new Promise(r=>setTimeout(r,3e3));await p.screenshot({path:'after.png',fullPage:true});await b.close();console.log('Done!');})();
+        EOF
+        
+    - name: Execute Click
+      run: node click.js
+      
+    - name: FORCE COMMIT FILES
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add before.png after.png click.js package*.json || true
+        git commit -m "🎯 CLICK COMPLETE
+
+        📸 Screenshots added
+        🖱️ Coords: 134,254
+        # ${{ github.run_id }}" || true$
+        git push https://x-access-token:{{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }} || true
+        
+    - name: Upload Backup
+      if: always()
+      uses: actions/upload-artifact@v4
       with:
-        add: '*.png'
-        message: '🎯 Click Results'
+        name: screenshots-${{ github.run_id }}
+        path: '*.png'
