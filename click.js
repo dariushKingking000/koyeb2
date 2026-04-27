@@ -1,57 +1,49 @@
+cat > click.js << 'EOF'
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 (async () => {
-  const config = {x: 134, y: 254, url: 'https://chatgpt.com'};
-  
-  console.log('🔥 ULTRA STEALTH MODE');
+  console.log('🚀 Stealth Click v24');
   
   const browser = await puppeteer.launch({
-    headless: false,  // VISIBLE = کمتر detect
-    executablePath: '/usr/bin/google-chrome-stable',
-    slowMo: 250,
+    headless: true,
     args: [
-      '--no-sandbox', '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage', '--disable-gpu',
-      '--disable-web-security', '--disable-extensions',
-      '--window-size=1920,1080', '--start-maximized'
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-web-security'
     ]
   });
   
   const page = await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-  await page.setViewport({width: 1920, height: 1080});
-
-  // CLOUDFLARE BYPASS
-  await page.evaluateOnNewDocument(() => {
-    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-    window.chrome = {runtime: {}};
-  });
-
-  console.log('🌐 Loading...');
-  const response = await page.goto(config.url, { 
-    waitUntil: 'load', 
-    timeout: 90000  // 90 ثانیه!
+  await page.setViewport({width: 1366, height: 768});
+  
+  console.log('🌐 Loading chatgpt.com...');
+  await page.goto('https://chatgpt.com', { 
+    waitUntil: 'domcontentloaded',
+    timeout: 45000 
   });
   
-  console.log(`Status: ${response.status()}`)$;
+  // v24: page.waitForTimeout → new Promise
+  console.log('⏳ Waiting 5s...');
+  await new Promise(r => setTimeout(r, 5000));
   
-  // انتظار MAX برای Cloudflare
-  $console.log('⏳ Cloudflare challenge...')$;
-  $await page.waitForTimeout(15000);  // 15$ ثانیه
+  await page.screenshot({path: 'before.png', fullPage: true});
+  console.log('📸 before.png saved');
   
-  // DEBUG screenshot
-  $await page.screenshot({path: 'debug.png', fullPage: true})$;
+  console.log('🖱️ CLICK 134,254');
+  await page.mouse.click(134, 254);
   
-  // CLICK!
-  $console.log(`🖱️ CLICK$ {config.x},${config.y}`);
-  await page.mouse.click(config.x, config.y);
-  await page.waitForTimeout(5000);
+  await new Promise(r => setTimeout(r, 3000));
   
   await page.screenshot({path: 'after.png', fullPage: true});
+  console.log('📸 after.png saved');
   
-  console.log('✅ DONE!');
+  console.log('✅ SUCCESS!');
   await browser.close();
   
+  require('fs').writeFileSync('status.txt', 'OK');
 })();
+EOF
