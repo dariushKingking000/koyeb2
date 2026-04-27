@@ -20,7 +20,7 @@ jobs:
     - name: Install
       run: |
         npm init -y
-        npm i puppeteer puppeteer-extra puppeteer-extra-plugin-stealth
+        npm i puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth
         
     - name: Script
       run: |
@@ -28,7 +28,22 @@ jobs:
         const puppeteer = require('puppeteer-extra');
         const StealthPlugin = require('puppeteer-extra-plugin-stealth');
         puppeteer.use(StealthPlugin());
-        (async()=>{const b=await puppeteer.launch({headless:!0,executablePath:'/opt/hostedtoolcache/chromium/latest/x64/chrome',args:['--no-sandbox','--disable-setuid-sandbox']});const p=await b.newPage();await p.setViewport({width:1366,height:768});await p.goto('https://chatgpt.com',{timeout:6e4});await new Promise(r=>setTimeout(r,3e3));await p.screenshot({path:'before.png'});await p.mouse.click(134,254);await p.evaluate(()=>{const c=document.createElement('div');c.style.cssText='position:fixed;left:124px;top:244px;width:20px;height:20px;background:#f00;border-radius:50%;box-shadow:0 0 15px #f00;z-index:99999';document.body.append(c);});await new Promise(r=>setTimeout(r,3e3));await p.screenshot({path:'after.png'});await b.close();})();
+        (async() => {
+          const b = await puppeteer.launch({
+            headless: true,
+            executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+          });
+          const p = await b.newPage();
+          await p.setViewport({width:1366,height:768});
+          await p.goto('https://chatgpt.com', {timeout:60000});
+          await new Promise(r=>setTimeout(r,3000));
+          await p.screenshot({path:'before.png'});
+          await p.mouse.click(134,254);
+          await new Promise(r=>setTimeout(r,3000));
+          await p.screenshot({path:'after.png'});
+          await b.close();
+        })();
         EOF
         
     - name: Run
@@ -40,4 +55,4 @@ jobs:
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
         git add before.png after.png click.js package*.json || true
         git commit -m "Click $(date)" || true$
-        git push origin HEAD:{GITHUB_REF##*/} || true
+        git push origin HEAD:{{ github.ref_name }} || true
