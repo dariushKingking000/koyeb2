@@ -6,106 +6,28 @@ permissions:
 jobs:
   click:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30  # افزایش timeout
     steps:
     - uses: actions/checkout@v4
     
     - uses: browser-actions/setup-chrome@v1
+      with:
+        chrome-version: stable
     
-    - name: Stealth Click
+    - name: Install Dependencies
       run: |
         npm init -y
         npm i puppeteer@latest puppeteer-extra puppeteer-extra-plugin-stealth@latest
         
-        cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        const fs = require('fs');
-        
-        puppeteer.use(StealthPlugin());
-        
-        const config = {
-          url: 'https://chatgpt.com',
-          x: 134, y: 254,
-          timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
-        
-        (async () => {
-          console.log('🚀 Stealth browser...');
-          
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--disable-web-security',
-              '--disable-features=VizDisplayCompositor',
-              '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            ]
-          });
-          
-          const page = await browser.newPage();
-          await page.setViewport({width: 1920, height: 1080});
-          
-          // 🛡️ Anti-bot headers
-          await page.setExtraHTTPHeaders({
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-            'Sec-Ch-Ua-Mobile': '?0',
-            'Sec-Ch-Ua-Platform': '"Windows"'
-          });
-          
-          console.log('🌐 Loading...');
-          await page.goto(config.url, { 
-            waitUntil: 'networkidle0',  // صبر کامل
-            timeout: 45000 
-          });
-          
-          // ⏳ Cloudflare bypass
-          await page.waitForTimeout(3000);
-          
-          // 📸 قبل
-          await page.screenshot({path: 'before.png', fullPage: true});
-          
-          console.log('🖱️ Clicking...');
-          await page.mouse.click(config.x, config.y);
-          await page.waitForTimeout(2000);
-          
-          // 🔴 دایره
-          await page.evaluate((x, y) => {
-            const circle = document.createElement('div');
-            circle.style.cssText = `position:fixed;
-              left:${x-3}px;top:${y-3}px;width:6px;height:6px;
-              background:#ff0000cc;border-radius:50%;border:2px solid white;
-              pointer-events:none;z-index:999999;box-shadow:0 0 8px red;`;
-            document.body.appendChild(circle);
-          }, config.x, config.y);
-          
-          // 📸 بعد + صبر
-          await page.waitForTimeout(3000);
-          await page.screenshot({path: 'after.png', fullPage: true});
-          
-          console.log(`✅ Clicked (${config.x},${config.y}) - Check after.png!`);
-          await browser.close();
-        })().catch(e => {
-          console.error('❌', e.message);
-          process.exit(1);
-        });
-        EOF
-        
-        node click.js
+    - name: Stealth Click
+      run: node click.js
+      env:
+        PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: true
     
-    - name: Commit
+    - name: Commit Results
       run: |
         git config user.name "github-actions"
         git config user.email "actions@github.com"
-        git add *.png *.json click.js
-        git commit -m "🎯 Stealth Click (134,254) [skip ci]" || true
+        git add *.png *.json click.js package*.json
+        git commit -m "🎯 Click Results [skip ci]" || true
         git push || true
