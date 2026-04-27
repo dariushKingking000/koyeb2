@@ -1,7 +1,6 @@
 name: Anti-Cloudflare Click
 on: [push]
-permissions:
-  contents: write
+permissions: { contents: write }
 
 jobs:
   click:
@@ -9,75 +8,11 @@ jobs:
     timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Setup Chrome & Node
-      uses: nanasess/setup-chromedriver@v2
-      
     - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-        
-    - name: Install
+      with: { node-version: 20 }
+    - name: Install & Fix
       run: |
         npm init -y
-        npm i puppeteer@22.12.1 puppeteer-extra@3.3.6 puppeteer-extra-plugin-stealth@2.11.2
-        
-    - name: Create click.js
-      run: |
-        cat > click.js << 'EOF'
-        const puppeteer = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        puppeteer.use(StealthPlugin());
-        
-        (async () => {
-          console.log('🚀 Starting...');
-          
-          const browser = await puppeteer.launch({
-            headless: true,
-            executablePath: '/usr/bin/google-chrome',
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--no-zygote',
-              '--single-process',
-              '--disable-extensions'
-            ]
-          });
-          
-          const page = await browser.newPage();
-          await page.setViewport({width: 1366, height: 768});
-          
-          console.log('🌐 Goto chatgpt.com');
-          await page.goto('https://chatgpt.com', { 
-            waitUntil: 'domcontentloaded',
-            timeout: 60000 
-          });
-          
-          await page.waitForTimeout(5000);
-          await page.screenshot({path: 'before.png'});
-          
-          console.log('🖱️ CLICK 134,254');
-          await page.mouse.click(134, 254);
-          await page.waitForTimeout(3000);
-          
-          await page.screenshot({path: 'after.png'});
-          console.log('✅ COMPLETE');
-          
-          await browser.close();
-        })().catch(console.error);
-        EOF
-        
-    - name: Run Click
-      run: node click.js
-      
-    - name: Save Results
-      if: always()
-      run: |
-        ls -la *.png
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        git add *.png click.js || true
-        git commit -m "Click results" || true
-        git push || true
+        npm i puppeteer@latest puppeteer-extra@latest puppeteer-extra-plugin-stealth@latest
+        npm audit fix --force
+    # بقیه steps مثل قبل...
