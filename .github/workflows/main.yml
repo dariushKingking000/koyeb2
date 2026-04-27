@@ -1,4 +1,4 @@
-name: Simple Click
+name: Click Coordinates
 on: [push]
 permissions:
   contents: write
@@ -6,53 +6,73 @@ permissions:
 jobs:
   click:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
     
-    - name: Chrome + Playwright Click
+    - uses: browser-actions/setup-chrome@v1
+    
+    - name: Click X,Y
       run: |
-        # Node
-        curl -fsSL https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xJ
-        export PATH="$PWD/node-v20.11.1-linux-x64/bin:$PATH"
-        
-        # Chrome
-        sudo apt-get update -qq
-        sudo apt-get install -y wget gnupg -qq
-        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-        sudo apt-get update -qq
-        sudo apt-get install -y google-chrome-stable -qq
-        
-        # Playwright (بدون npm dependency issues)
         npm init -y
-        npm install playwright-core@1.40.0
-        
+        npm i puppeteer
         cat > click.js << 'EOF'
-        const { chromium } = require('playwright-core');
+        const puppeteer = require('puppeteer');
+        const fs = require('fs');
+        
+        // مختصات کلیک (134, 254)
+        const config = {
+          url: 'https://chatgpt.com',
+          x: 134,
+          y: 254,
+          timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+        
         (async () => {
-          const browser = await chromium.launch({
-            headless: true,
-            executablePath: '/usr/bin/google-chrome-stable',
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
+          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
           const page = await browser.newPage();
-          await page.setViewportSize({ width: 1366, height: 768 });
-          await page.goto('https://chatgpt.com');
-          await page.screenshot({ path: 'before.png' });
+          await page.setViewport({width: 1920, height: 1080});
+          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 20000});
           
-          // Wait & Click first button
-          await page.waitForTimeout(5000);
-          await page.click('button, [role="button"]', { timeout: 10000 });
-          await page.waitForTimeout(3000);
-          await page.screenshot({ path: 'after.png' });
+          // 📸 قبل از کلیک
+          await page.screenshot({path: 'before-click.png', fullPage: true});
           
+          // 🖱️ کلیک دقیق X,Y
+          await page.mouse.click(config.x, config.y);
+          
+          // 🔴 کوچکترین دایره ممکن
+          await page.evaluate((x, y) => {
+            const circle = document.createElement('div');
+            circle.style.position = 'fixed';
+            circle.style.left = (x - 2) + 'px';
+            circle.style.top = (y - 2) + 'px';
+            circle.style.width = '4px';
+            circle.style.height = '4px';
+            circle.style.backgroundColor = 'red';
+            circle.style.borderRadius = '50%';
+            circle.style.border = '1px solid white';
+            circle.style.pointerEvents = 'none';
+            circle.style.zIndex = '99999';
+            document.body.appendChild(circle);
+          }, config.x, config.y);
+          
+          console.log(`✅ Clicked at (${config.x}, ${config.y})`);
+          
+          // 📸 بعد از کلیک + دایره
+          await page.screenshot({path: 'after-click.png', fullPage: true});
           await browser.close();
-          console.log('✅ Click completed!');
-        })();
+        })().catch(e => {
+          console.error('❌ Error:', e.message);
+          process.exit(1);
+        });
         EOF
-        
         node click.js
-        
-    - uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        commit_message: "Auto Click"
+    
+    - name: Commit
+      run: |
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add *.png config.json
+        git commit -m "🎯 Click (134,254) [skip ci]" || exit 0
+        git push || exit 0
