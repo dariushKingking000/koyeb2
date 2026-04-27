@@ -1,4 +1,4 @@
-name: Simple Click
+name: Debug Click with Logs
 on: [push]
 permissions:
   contents: write
@@ -9,50 +9,71 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Chrome + Playwright Click
+    - name: Setup & Test
       run: |
-        # Node
+        # Save all logs
+        exec > >(tee -a logs.txt) 2>&1
+        
+        echo "=== Node Setup ==="
         curl -fsSL https://nodejs.org/dist/v20.11.1/node-v20.11.1-linux-x64.tar.xz | tar -xJ
         export PATH="$PWD/node-v20.11.1-linux-x64/bin:$PATH"
+        node --version
+        npm --version
         
-        # Chrome
+        echo "=== Chrome Setup ==="
         sudo apt-get update -qq
         sudo apt-get install -y wget gnupg -qq
         wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
         echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
         sudo apt-get update -qq
         sudo apt-get install -y google-chrome-stable -qq
+        google-chrome --version
         
-        # Playwright (بدون npm dependency issues)
+        echo "=== Simple Test ==="
         npm init -y
         npm install playwright-core@1.40.0
         
-        cat > click.js << 'EOF'
+        cat > test.js << 'EOF'
+        console.log("Script started");
         const { chromium } = require('playwright-core');
         (async () => {
-          const browser = await chromium.launch({
-            headless: true,
-            executablePath: '/usr/bin/google-chrome-stable',
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
-          const page = await browser.newPage();
-          await page.setViewportSize({ width: 1366, height: 768 });
-          await page.goto('https://chatgpt.com');
-          await page.screenshot({ path: 'before.png' });
-          
-          // Wait & Click first button
-          await page.waitForTimeout(5000);
-          await page.click('button, [role="button"]', { timeout: 10000 });
-          await page.waitForTimeout(3000);
-          await page.screenshot({ path: 'after.png' });
-          
-          await browser.close();
-          console.log('✅ Click completed!');
+          try {
+            console.log("Launching browser...");
+            const browser = await chromium.launch({
+              headless: true,
+              executablePath: '/usr/bin/google-chrome-stable',
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+            });
+            console.log("Browser launched");
+            
+            const page = await browser.newPage();
+            console.log("Navigating...");
+            await page.goto('https://httpbin.org/html', { waitUntil: 'networkidle' });
+            console.log("Page loaded");
+            
+            await page.screenshot({ path: 'test.png' });
+            console.log("Screenshot saved");
+            
+            await page.click('h1');
+            console.log("Click done");
+            
+            await browser.close();
+            console.log("✅ SUCCESS");
+          } catch (e) {
+            console.error("❌ ERROR:", e.message);
+            console.error("Stack:", e.stack);
+            process.exit(1);
+          }
         })();
         EOF
         
-        node click.js
+        node test.js
         
-    - uses: stefanzweifel/git-auto-commit-action@v5
+    - name: Upload Logs
+      uses: actions/upload-artifact@v4
       with:
-        commit_message: "Auto Click"
+        name: debug-logs
+        path: |
+          logs.txt
+          test.png
+          *.log
