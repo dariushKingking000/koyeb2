@@ -15,13 +15,14 @@ jobs:
         sudo apt-get install -y xvfb ffmpeg xdotool wmctrl
         
     - name: ⚙️ Setup Node & Chrome
-      uses: browser-actions/setup-chrome@v1.1.0
+      run: |
+        npm init -y
+        npm install puppeteer-core@22 puppeteer-extra@3.3.6 puppeteer-extra-plugin-stealth@2.11.2
+    
+    - uses: browser-actions/setup-chrome@v1.1.0
     - uses: actions/setup-node@v4
       with:
         node-version: 20
-    - run: |
-        npm init -y
-        npm i puppeteer-core@22 puppeteer-extra@3.3.6 puppeteer-extra-plugin-stealth@2.11.2
 
     - name: 📱 Create Script
       run: |
@@ -32,7 +33,7 @@ puppeteer.use(StealthPlugin());
 
 (async () => {
   console.log('🚀 Starting...');
-  
+
   // Launch browser
   const browser = await puppeteer.launch({
     headless: false,
@@ -133,4 +134,3 @@ SCRIPT
         ls -la *.png video.* 2>/dev/null | cat || echo "No files"
         echo "=== Video Info ==="
         [ -f video.mp4 ] && ffmpeg -i video.mp4 2>&1 | head -20 || echo "No video"
-
