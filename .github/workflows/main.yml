@@ -77,8 +77,7 @@ jobs:
             console.log('✅ Complete!');
             await browser.close();
           })();
-          
- SCRIPT
+          SCRIPT
 
       - name: 🎥 Setup Virtual Display & Record Video
         run: |
@@ -131,3 +130,4 @@ jobs:
           ls -la *.png video.* 2>/dev/null | cat || echo "No files"
           echo "=== Video Info ==="
           [ -f video.mp4 ] && ffmpeg -i video.mp4 2>&1 | head -20 || echo "No video"
+
