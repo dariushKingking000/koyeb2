@@ -23,7 +23,6 @@ jobs:
         with:
           node-version: 20
 
-      # خط ۳۵ اینجاست:
       - name: Install npm packages
         run: |
           npm init -y
