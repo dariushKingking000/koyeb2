@@ -1,4 +1,4 @@
-name: Stealth Type with Video (Fixed)
+name: Stealth Type with Video Recording
 on: [push]
 permissions:
   contents: write
@@ -17,7 +17,7 @@ jobs:
       with:
         node-version: 20
         
-    - name: Install xvfb and dependencies
+    - name: Install xvfb, ffmpeg, and unzip
       run: sudo apt-get update && sudo apt-get install -y xvfb ffmpeg --no-install-recommends
 
     - name: Install npm packages
@@ -40,21 +40,24 @@ jobs:
         const CLICK_X = 134;
         const CLICK_Y = 254;
         
+        // این متغیر برای دسترسی به مرورگر در بلوک catch است
+        let browser = null;
+
         (async () => {
           try {
-            const browser = await puppeteer.launch({
-              headless: true, // با xvfb نیازی به headful نیست، ولی اگر برای تست بخوای میتونی false بذاری
+            browser = await puppeteer.launch({
+              headless: false, // <<< تغییر مهم: اجرای مرورگر به صورت headful
               userDataDir: './user_data',
               executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
               args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
-                // این آرگومان‌ها ممکن است برای اجرای صحیح در محیط مجازی لازم باشند
-                // '--disable-gpu', 
-                // '--disable-dev-shm-usage',
-                // '--disable-web-security',
-                // '--allow-running-insecure-content',
-                // '--ignore-certificate-errors'
+                '--disable-gpu', // این آرگومان‌ها برای اجرای headful در محیط مجازی اغلب لازم هستند
+                '--disable-dev-shm-usage',
+                '--disable-web-security',
+                '--allow-running-insecure-content',
+                '--ignore-certificate-errors',
+                '--window-size=1366,768' // تنظیم اندازه پنجره
               ]
             });
             const page = await browser.newPage();
@@ -77,27 +80,62 @@ jobs:
             await new Promise(r => setTimeout(r, 3000));
             
             await page.screenshot({path: 'after_type.png'});
-            await browser.close();
+            
             console.log('✅ Typing completed!');
+            // مرورگر را اینجا نمی‌بندیم تا ffmpeg بتواند ضبط را ادامه دهد
+            // await browser.close(); 
+
           } catch (error) {
             console.error('❌ Error:', error.message);
             // اگر خطایی رخ داد، مرورگر را ببند
             if (browser) await browser.close();
+            // اینجا یک خطای خاص برای ffmpeg در نظر گرفته نشده، ولی باید مدیریت شود
+            throw error; // خطا را دوباره پرتاب کن تا workflow متوقف شود
           }
         })();
         EOF
 
-    - name: Run script with xvfb-run
+    - name: Setup Xvfb and Start FFmpeg for recording
+      run: |
+        # راه‌اندازی سرور نمایش مجازی Xvfb
+        Xvfb :1 -screen 0 1366x768x24 &
+        export DISPLAY=:1
+        
+        # شروع ضبط با ffmpeg - این دستور باید در پس‌زمینه اجرا شود
+        # -f x11grab: برای ضبط از نمایشگر X11
+        # -video_size 1366x768: اندازه ویدیو
+        # -i :1: ضبط از دیسپلی شماره 1
+        # -r 30: نرخ فریم 30 فریم در ثانیه
+        # -pix_fmt yuv420p: فرمت پیکسل برای سازگاری بیشتر
+        # output.mp4: نام فایل خروجی
+        ffmpeg -y -f x11grab -video_size 1366x768 -i :1.0+0,0 -r 30 -pix_fmt yuv420p output.mp4 &
+        
+        # یک وقفه کوتاه برای اطمینان از شروع شدن ffmpeg
+        sleep 5
+
+    - name: Run script with xvfb-run and Node.js
       run: xvfb-run --auto-servernum --server-num=1 node type.js
 
-    # این قسمت را باید بر اساس اینکه آیا واقعا فایل ویدیویی ساخته شده یا نه، تغییر داد
-    # در حال حاضر، با headless:true و بدون ضبط صفحه، فایل video.mp4 ساخته نخواهد شد
-    # اگر نیاز به ویدیو داری، باید headless را false کنی و مکانیزم ضبط ویدیو را اضافه کنی
-    - name: Commit & Push Screenshots
+    - name: Stop FFmpeg and save video
+      if: success() || failure() # این مرحله همیشه اجرا شود، حتی اگر اسکریپت خطا بدهد
+      run: |
+        # پیدا کردن PID پروسه ffmpeg و کشتن آن
+        # این بخش ممکن است نیاز به تنظیم داشته باشد بسته به محیط GitHub Actions
+        killall ffmpeg || echo "ffmpeg process not found or already stopped."
+        
+        # اطمینان حاصل کنید که فایل output.mp4 وجود دارد
+        if [ -f "output.mp4" ]; then
+          mv output.mp4 ./video.mp4
+          echo "Video saved as video.mp4"
+        else
+          echo "output.mp4 not found. No video was recorded."
+        fi
+
+    - name: Commit & Push Screenshots and Video
       run: |
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        git add *.png type.js package*.json || true
+        git add *.png type.js package*.json video.mp4 || true # اضافه شدن video.mp4
         git rm -r --cached user_data || true
-        git commit -m "Type $(date +%Y-%m-%d\ %H:%M:%S) with screenshots" || true
+        git commit -m "Type $(date +%Y-%m-%d\ %H:%M:%S) with screenshots and video" || true
         git push origin HEAD:main || true
