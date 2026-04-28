@@ -1,4 +1,4 @@
-name: Stealth Type with Video Recording
+name: Stealth Type
 on: [push]
 permissions:
   contents: write
@@ -8,127 +8,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Setup Chrome
-      uses: browser-actions/setup-chrome@v1.1.0
-      
-    - name: Setup Node
-      uses: actions/setup-node@v4
+    - uses: browser-actions/setup-chrome@v1.1.0
+    - uses: actions/setup-node@v4
       with:
         node-version: 20
-        
-    - name: Install xvfb, ffmpeg, and unzip
-      run: sudo apt-get update && sudo apt-get install -y xvfb ffmpeg --no-install-recommends
-
-    - name: Install npm packages
+    - name: Install
       run: |
-        rm -rf node_modules package*.json || true
+        sudo apt-get install -y xvfb ffmpeg
         npm init -y
-        npm i puppeteer-core@latest puppeteer-extra puppeteer-extra-plugin-stealth
-
-    - name: Create User Data Dir
-      run: mkdir -p user_data
-    
-    - name: Create type.js script
+        npm i puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth
+    - name: Create script
       run: |
         cat > type.js << 'EOF'
-        const puppeteer = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        puppeteer.use(StealthPlugin());
-
-        const TEXT_TO_TYPE = 'سلام! چطوری؟';
-        const CLICK_X = 134;
-        const CLICK_Y = 254;
-        
-        let browser = null;
-        let ffmpegPid = null;
-
-        (async () => {
-          try {
-            // راه‌اندازی Xvfb و ffmpeg
-            const { spawn } = require('child_process');
-            
-            // Xvfb را در پس‌زمینه اجرا کن
-            const xvfb = spawn('Xvfb', [':99', '-screen', '0', '1366x768x24'], { stdio: 'ignore' });
-            await new Promise(r => setTimeout(r, 2000));
-            
-            // ffmpeg را شروع کن
-            ffmpegPid = spawn('ffmpeg', [
-              '-y', '-f', 'x11grab', '-video_size', '1366x768', 
-              '-i', ':99.0+0,0', '-r', '30', '-pix_fmt', 'yuv420p', 
-              'output.mp4'
-            ], { stdio: 'pipe' });
-            
-            await new Promise(r => setTimeout(r, 2000));
-
-            browser = await puppeteer.launch({
-              headless: false,
-              userDataDir: './user_data',
-              executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-              args: [
-                '--no-sandbox', '--disable-setuid-sandbox',
-                '--disable-gpu', '--disable-dev-shm-usage',
-                '--disable-web-security', '--allow-running-insecure-content',
-                '--ignore-certificate-errors', '--window-size=1366,768',
-                '--display=:99'  // مهم: اتصال به display درست
-              ]
-            });
-            
-            const page = await browser.newPage();
-            await page.setViewport({width:1366, height:768});
-            
-            console.log('Loading chatgpt.com...');
-            await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 60000});
-            await new Promise(r => setTimeout(r, 5000));
-            
-            await page.screenshot({path: 'before_click.png'});
-            
-            console.log('Clicking at (' + CLICK_X + ', ' + CLICK_Y + ')...');
-            await page.mouse.click(CLICK_X, CLICK_Y);
-            await new Promise(r => setTimeout(r, 5000));
-            
-            await page.screenshot({path: 'after_click.png'});
-            
-            console.log('Typing: ' + TEXT_TO_TYPE);
-            await page.keyboard.type(TEXT_TO_TYPE, {delay: 100});
-            await new Promise(r => setTimeout(r, 3000));
-            
-            await page.screenshot({path: 'after_type.png'});
-            
-            console.log('✅ Typing completed!');
-            await new Promise(r => setTimeout(r, 2000));
-            
-          } catch (error) {
-            console.error('❌ Error:', error.message);
-            throw error;
-          } finally {
-            // بستن همه پروسه‌ها
-            if (ffmpegPid) ffmpegPid.kill();
-            if (browser) await browser.close();
-          }
-        })();
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
+(async()=>{const b=await puppeteer.launch({headless:false,executablePath:'/opt/hostedtoolcache/chromium/latest/x64/chrome',args:['--no-sandbox','--disable-setuid-sandbox','--disable-gpu','--window-size=1366,768']});const p=await b.newPage();await p.setViewport({width:1366,height:768});await p.goto('https://chatgpt.com',{waitUntil:'networkidle2'});await p.waitForTimeout(5000);await p.screenshot({path:'1.png'});await p.mouse.click(134,254);await p.waitForTimeout(3000);await p.screenshot({path:'2.png'});await p.keyboard.type('سلام! چطوری؟',{delay:100});await p.waitForTimeout(3000);await p.screenshot({path:'3.png'});await b.close();})();
 EOF
-
-    - name: Run script
-      run: |
-        node type.js
-        sleep 2
-        pkill -f Xvfb || true
-        
-    - name: Rename video if exists
-      run: |
-        if [ -f "output.mp4" ]; then
-          mv output.mp4 ./video.mp4
-          echo "Video saved as video.mp4"
-        else
-          echo "No video recorded"
-        fi
-
-    - name: Commit & Push
+    - name: Run
+      run: xvfb-run node type.js
+    - name: Commit
       run: |
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        git add *.png type.js package*.json video.mp4 || true
-        git rm -r --cached user_data || true
-        git commit -m "Type $(date +%Y-%m-%d\ %H:%M:%S) ✅" || true
-        git push origin HEAD:main || true
+        git add *.png type.js || true
+        git commit -m "Type done" || true
+        git push || true
