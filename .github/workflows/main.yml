@@ -1,134 +1,97 @@
-name: Stealth Typing + Video (100% Working)
-
-on:
-  push:
-
+name: Stealth Type with Video Recording
+on: [push]
 permissions:
   contents: write
 
 jobs:
-  record:
+  type:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@v1.1.0
+      
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        
+    - name: Install xvfb, ffmpeg, and unzip
+      run: sudo apt-get update && sudo apt-get install -y xvfb ffmpeg --no-install-recommends
 
-      - name: Setup Environment
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y xvfb ffmpeg xdotool wmctrl chromium-browser
-          CHROMIUM_PATH=$(which chromium-browser)
-          echo "CHROMIUM_PATH=$CHROMIUM_PATH" >> $GITHUB_ENV
-          echo "Using Chromium at: $CHROMIUM_PATH"
+    - name: Install npm packages
+      run: |
+        rm -rf node_modules package*.json || true
+        npm init -y
+        npm i puppeteer-core@latest puppeteer-extra puppeteer-extra-plugin-stealth
 
-      - name: Setup Node & Install Dependencies
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+    - name: Create User Data Dir
+      run: mkdir -p user_data
+    
+    - name: Create type.js script
+      run: |
+        cat > type.js << EOF
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+puppeteer.use(StealthPlugin());
+const TEXT_TO_TYPE = 'سلام! چطوری؟';
+const CLICK_X = 134;
+const CLICK_Y = 254;
+let browser = null;
+(async () => {
+  try {
+    const { spawn } = require('child_process');
+    const xvfb = spawn('Xvfb', [':99', '-screen', '0', '1366x768x24'], { stdio: 'ignore' });
+    await new Promise(r => setTimeout(r, 2000));
+    const ffmpeg = spawn('ffmpeg', ['-y', '-f', 'x11grab', '-video_size', '1366x768', '-i', ':99.0+0,0', '-r', '15', '-pix_fmt', 'yuv420p', 'output.mp4']);
+    await new Promise(r => setTimeout(r, 1000));
+    browser = await puppeteer.launch({
+      headless: false,
+      userDataDir: './user_data',
+      executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--window-size=1366,768', '--display=:99']
+    });
+    const page = await browser.newPage();
+    await page.setViewport({width:1366, height:768});
+    console.log('Loading...');
+    await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2'});
+    await new Promise(r => setTimeout(r, 3000));
+    await page.screenshot({path: '1.png'});
+    console.log('Clicking...');
+    await page.mouse.click(CLICK_X, CLICK_Y);
+    await new Promise(r => setTimeout(r, 2000));
+    await page.screenshot({path: '2.png'});
+    console.log('Typing...');
+    await page.keyboard.type(TEXT_TO_TYPE, {delay: 80});
+    await new Promise(r => setTimeout(r, 2000));
+    await page.screenshot({path: '3.png'});
+    console.log('✅ Done!');
+    await new Promise(r => setTimeout(r, 2000));
+  } catch (e) {
+    console.error('Error:', e.message);
+  } finally {
+    if (browser) await browser.close();
+  }
+})();
+EOF
 
-      - name: Install npm packages
-        run: |
-          npm init -y
-          npm i puppeteer-core@22 puppeteer-extra@3.3.6 puppeteer-extra-plugin-stealth@2.11.2
+    - name: Run script
+      run: |
+        node type.js
+        sleep 3
+        pkill Xvfb ffmpeg || true
 
-      - name: Create Script
-        run: |
-          cat > type.js <<'END_SCRIPT'
-          const puppeteer = require('puppeteer-core');
-          const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-          puppeteer.use(StealthPlugin());
+    - name: Prepare video
+      run: |
+        [ -f output.mp4 ] && mv output.mp4 video.mp4 || touch video.mp4
+        echo "Files: $(ls *.png video.mp4 2>/dev/null | wc -l)"
 
-          (async () => {
-            console.log('🚀 Starting...');
-
-            const browser = await puppeteer.launch({
-              headless: false,
-              executablePath: process.env.CHROMIUM_PATH,
-              args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-                '--disable-web-security',
-                '--ignore-certificate-errors',
-                '--window-size=1366,768'
-              ]
-            });
-
-            const page = await browser.newPage();
-            await page.setViewport({ width: 1366, height: 768 });
-
-            console.log('🌐 Loading chatgpt.com...');
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle2' });
-            await page.waitForTimeout(5000);
-
-            await page.screenshot({ path: '1_before.png' });
-
-            console.log('🖱️ Clicking input...');
-            await page.mouse.click(134, 254);
-            await page.waitForTimeout(2000);
-
-            await page.screenshot({ path: '2_clicked.png' });
-            console.log('⌨️ Typing: سلام! چطوری؟');
-            await page.keyboard.type('سلام! چطوری؟', { delay: 120 });
-            await page.waitForTimeout(3000);
-            await page.screenshot({ path: '3_typed.png' });
-
-            console.log('✅ Complete!');
-            await browser.close();
-          })();
-          END_SCRIPT
-
-      - name: Setup Virtual Display & Record Video
-        run: |
-          Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
-          export DISPLAY=:99
-          sleep 2
-
-          ffmpeg -y -f x11grab -video_size 1366x768 -i :99.0+0,0 \
-            -r 20 -pix_fmt yuv420p -crf 18 -preset fast \
-            -t 45 video.mp4 > /dev/null 2>&1 &
-          FFMPEG_PID=$!
-
-          node type.js
-
-          sleep 5
-          kill $FFMPEG_PID 2>/dev/null || true
-          wait $FFMPEG_PID 2>/dev/null || true
-
-          ls -la *.png video.mp4 2>/dev/null | cat || true
-
-          if [ -f video.mp4 ] && [ $(stat -c%s video.mp4) -gt 50000000 ]; then
-            ffmpeg -y -i video.mp4 -vcodec libx264 -crf 28 -preset fast video_small.mp4
-            mv video_small.mp4 video.mp4
-          fi
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: typing-results
-          path: |
-            *.png
-            video.mp4
-            type.js
-
-      - name: Commit & Push
-        run: |
-          git config user.name "🤖 GitHub Actions Bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -f *.png video.mp4 type.js package*.json || true
-          git rm -rf user_data || true
-
-          git commit -m "🎬 Typing Demo: $(date '+%Y-%m-%d %H:%M')" || true
-          git push origin HEAD:main || true
-
-      - name: Show Results
-        if: always()
-        run: |
-          echo "=== FILES ==="
-          ls -la *.png video.mp4 2>/dev/null || echo "No files"
-          echo "=== Video Info ==="
-          [ -f video.mp4 ] && ffmpeg -i video.mp4 2>&1 | head -20 || echo "No video"
-
+    - name: Commit & Push
+      run: |
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git add *.png video.mp4 type.js package*.json || true
+        git rm -rf user_data || true
+        git commit -m "Typing $(date +%Y-%m-%d_%H:%M)" || true
+        git push origin HEAD:main || true
