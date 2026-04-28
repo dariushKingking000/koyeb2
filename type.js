@@ -2,7 +2,6 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-// 👇 تغییر بده
 const TEXT_TO_TYPE = 'سلام! چطوری؟';
 const CLICK_X = 134;
 const CLICK_Y = 254;
@@ -10,23 +9,32 @@ const CLICK_Y = 254;
 (async () => {
   try {
     const browser = await puppeteer.launch({
-      headless: true,
+      headless: true, // با xvfb نیازی به headful نیست، ولی اگر برای تست بخوای میتونی false بذاری
       userDataDir: './user_data',
       executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        // این آرگومان‌ها ممکن است برای اجرای صحیح در محیط مجازی لازم باشند
+        // '--disable-gpu', 
+        // '--disable-dev-shm-usage',
+        // '--disable-web-security',
+        // '--allow-running-insecure-content',
+        // '--ignore-certificate-errors'
+      ]
     });
     const page = await browser.newPage();
     await page.setViewport({width:1366, height:768});
     
     console.log('Loading chatgpt.com...');
-    await page.goto('https://chatgpt.com', {timeout: 60000});
+    await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 60000});
     await new Promise(r => setTimeout(r, 5000));
     
     await page.screenshot({path: 'before_click.png'});
     
     console.log('Clicking at (' + CLICK_X + ', ' + CLICK_Y + ')...');
     await page.mouse.click(CLICK_X, CLICK_Y);
-    await new Promise(r => setTimeout(r, 5000));  // 5 ثانیه
+    await new Promise(r => setTimeout(r, 5000));
     
     await page.screenshot({path: 'after_click.png'});
     
@@ -39,5 +47,7 @@ const CLICK_Y = 254;
     console.log('✅ Typing completed!');
   } catch (error) {
     console.error('❌ Error:', error.message);
+    // اگر خطایی رخ داد، مرورگر را ببند
+    if (browser) await browser.close();
   }
 })();
