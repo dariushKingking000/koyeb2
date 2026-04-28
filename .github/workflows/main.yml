@@ -17,7 +17,7 @@ jobs:
       - name: 🎨 Setup Environment
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y xvfb ffmpeg xdotool wmctrl
+          sudo apt-get install -y xvfb ffmpeg xdotool wmctrl chromium-browser
 
       - name: ⚙️ Setup Node & Install Dependencies
         uses: actions/setup-node@v4
@@ -41,7 +41,7 @@ jobs:
 
             const browser = await puppeteer.launch({
               headless: false,
-              // executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome', // <-- این خط حذف شده است
+              executablePath: '/usr/bin/chromium-browser',
               args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -77,7 +77,7 @@ jobs:
             console.log('✅ Complete!');
             await browser.close();
           })();
-          SCRIPT
+SCRIPT
 
       - name: 🎥 Setup Virtual Display & Record Video
         run: |
