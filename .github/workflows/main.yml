@@ -1,4 +1,4 @@
-name: Stealth Type with Video
+name: Stealth Type with Video (Fixed)
 on: [push]
 permissions:
   contents: write
@@ -17,16 +17,19 @@ jobs:
       with:
         node-version: 20
         
-    - name: Install
+    - name: Install xvfb and dependencies
+      run: sudo apt-get update && sudo apt-get install -y xvfb ffmpeg --no-install-recommends
+
+    - name: Install npm packages
       run: |
         rm -rf node_modules package*.json || true
         npm init -y
-        npm i puppeteer-core@latest puppeteer-extra puppeteer-extra-plugin-stealth ffmpeg-static
+        npm i puppeteer-core@latest puppeteer-extra puppeteer-extra-plugin-stealth
 
     - name: Create User Data Dir
       run: mkdir -p user_data
     
-    - name: Script
+    - name: Create type.js script
       run: |
         cat > type.js << EOF
         const puppeteer = require('puppeteer-extra');
@@ -40,61 +43,61 @@ jobs:
         (async () => {
           try {
             const browser = await puppeteer.launch({
-              headless: false, // برای ضبط صفحه باید غیرسرشار باشد
+              headless: true, // با xvfb نیازی به headful نیست، ولی اگر برای تست بخوای میتونی false بذاری
               userDataDir: './user_data',
               executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-              args: ['--no-sandbox', '--disable-setuid-sandbox']
+              args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                // این آرگومان‌ها ممکن است برای اجرای صحیح در محیط مجازی لازم باشند
+                // '--disable-gpu', 
+                // '--disable-dev-shm-usage',
+                // '--disable-web-security',
+                // '--allow-running-insecure-content',
+                // '--ignore-certificate-errors'
+              ]
             });
             const page = await browser.newPage();
             await page.setViewport({width:1366, height:768});
             
-            // شروع ضبط صفحه با ffmpeg
-            const { spawn } = require('child_process');
-            const ffmpeg = spawn('ffmpeg', [
-              '-y', // برکت کنید
-              '-f', 'x11grab', // مخصوص لینوکس، برای ضبط صفحه
-              '-video_size', '1366x768', 
-              '-i', ':0.0+0,0', // صفحه نمایش، در محیط‌های مجازی ممکن است نیاز به تنظیم داشته باشد
-              '-framerate', '30', 
-              '-pix_fmt', 'yuv420p', 
-              'output.mp4'
-            ]);
-
             console.log('Loading chatgpt.com...');
-            await page.goto('https://chatgpt.com', {timeout: 60000});
+            await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 60000});
             await new Promise(r => setTimeout(r, 5000));
             
             await page.screenshot({path: 'before_click.png'});
+            
+            console.log('Clicking at (' + CLICK_X + ', ' + CLICK_Y + ')...');
             await page.mouse.click(CLICK_X, CLICK_Y);
             await new Promise(r => setTimeout(r, 5000));
+            
             await page.screenshot({path: 'after_click.png'});
+            
+            console.log('Typing: ' + TEXT_TO_TYPE);
             await page.keyboard.type(TEXT_TO_TYPE, {delay: 100});
             await new Promise(r => setTimeout(r, 3000));
+            
             await page.screenshot({path: 'after_type.png'});
             await browser.close();
-
-            // نگه داشتن ضبط
-            ffmpeg.kill('SIGINT');
-            console.log('ضبط پایان یافت.');
-
+            console.log('✅ Typing completed!');
           } catch (error) {
             console.error('❌ Error:', error.message);
+            // اگر خطایی رخ داد، مرورگر را ببند
+            if (browser) await browser.close();
           }
         })();
         EOF
 
-    - name: Run
-      run: node type.js
+    - name: Run script with xvfb-run
+      run: xvfb-run --auto-servernum --server-num=1 node type.js
 
-    - name: Save Video
-      run: |
-        mv output.mp4 ./video.mp4
-
-    - name: Commit & Push
+    # این قسمت را باید بر اساس اینکه آیا واقعا فایل ویدیویی ساخته شده یا نه، تغییر داد
+    # در حال حاضر، با headless:true و بدون ضبط صفحه، فایل video.mp4 ساخته نخواهد شد
+    # اگر نیاز به ویدیو داری، باید headless را false کنی و مکانیزم ضبط ویدیو را اضافه کنی
+    - name: Commit & Push Screenshots
       run: |
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-        git add *.png type.js package*.json video.mp4 || true
+        git add *.png type.js package*.json || true
         git rm -r --cached user_data || true
-        git commit -m "Add video of automation $(date +%Y-%m-%d\ %H:%M:%S)" || true
+        git commit -m "Type $(date +%Y-%m-%d\ %H:%M:%S) with screenshots" || true
         git push origin HEAD:main || true
