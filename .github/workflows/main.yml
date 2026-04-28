@@ -1,3 +1,29 @@
+name: 🎬 Stealth Typing + Video (100% Working)
+
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 🎨 Setup Environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb ffmpeg xdotool wmctrl
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # خط ۳۵ اینجاست:
       - name: Install npm packages
         run: |
           npm init -y
@@ -49,3 +75,37 @@ const puppeteer = require('puppeteer');
 })();
 SCRIPT
 
+      - name: 🎥 Setup Virtual Display & Record Video
+        run: |
+          Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
+          export DISPLAY=:99
+          sleep 2
+
+          ffmpeg -y -f x11grab -video_size 1366x768 -i :99.0+0,0 \
+            -r 20 -pix_fmt yuv420p -crf 18 -preset fast \
+            -t 45 video.mp4 > /dev/null 2>&1 &
+          FFMPEG_PID=$!
+
+          node type.js
+
+          sleep 5
+          kill $FFMPEG_PID 2>/dev/null || true
+          wait $FFMPEG_PID 2>/dev/null || true
+
+      - name: 📤 Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: typing-results
+          path: |
+            *.png
+            video.mp4
+            type.js
+
+      - name: 💾 Commit & Push
+        run: |
+          git config user.name "🤖 GitHub Actions Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -f *.png video.mp4 type.js package*.json 2>/dev/null || true
+          git commit -m "🎬 Typing Demo: $(date '+%Y-%m-%d %H:%M')" || true
+          git push origin HEAD:main || true
