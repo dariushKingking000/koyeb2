@@ -2,52 +2,44 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-const TEXT_TO_TYPE = 'سلام! چطوری؟';
-const CLICK_X = 134;
-const CLICK_Y = 254;
-
 (async () => {
-  try {
-    const browser = await puppeteer.launch({
-      headless: true, // با xvfb نیازی به headful نیست، ولی اگر برای تست بخوای میتونی false بذاری
-      userDataDir: './user_data',
-      executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-      args: [
-        '--no-sandbox', 
-        '--disable-setuid-sandbox',
-        // این آرگومان‌ها ممکن است برای اجرای صحیح در محیط مجازی لازم باشند
-        // '--disable-gpu', 
-        // '--disable-dev-shm-usage',
-        // '--disable-web-security',
-        // '--allow-running-insecure-content',
-        // '--ignore-certificate-errors'
-      ]
-    });
-    const page = await browser.newPage();
-    await page.setViewport({width:1366, height:768});
-    
-    console.log('Loading chatgpt.com...');
-    await page.goto('https://chatgpt.com', {waitUntil: 'networkidle2', timeout: 60000});
-    await new Promise(r => setTimeout(r, 5000));
-    
-    await page.screenshot({path: 'before_click.png'});
-    
-    console.log('Clicking at (' + CLICK_X + ', ' + CLICK_Y + ')...');
-    await page.mouse.click(CLICK_X, CLICK_Y);
-    await new Promise(r => setTimeout(r, 5000));
-    
-    await page.screenshot({path: 'after_click.png'});
-    
-    console.log('Typing: ' + TEXT_TO_TYPE);
-    await page.keyboard.type(TEXT_TO_TYPE, {delay: 100});
-    await new Promise(r => setTimeout(r, 3000));
-    
-    await page.screenshot({path: 'after_type.png'});
-    await browser.close();
-    console.log('✅ Typing completed!');
-  } catch (error) {
-    console.error('❌ Error:', error.message);
-    // اگر خطایی رخ داد، مرورگر را ببند
-    if (browser) await browser.close();
-  }
+  console.log('🚀 Starting...');
+
+  const browser = await puppeteer.launch({
+    headless: false,
+    // executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome', // <-- این خط حذف شده است
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--disable-web-security',
+      '--ignore-certificate-errors',
+      '--window-size=1366,768'
+    ]
+  });
+
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1366, height: 768 });
+
+  console.log('🌐 Loading chatgpt.com...');
+  await page.goto('https://chatgpt.com', { waitUntil: 'networkidle2' });
+  await page.waitForTimeout(5000);
+
+  await page.screenshot({ path: '1_before.png' });
+
+  console.log('🖱️ Clicking input...');
+  await page.mouse.click(134, 254);
+  await page.waitForTimeout(2000);
+
+  await page.screenshot({ path: '2_clicked.png' });
+
+  console.log('⌨️ Typing: سلام! چطوری؟');
+  await page.keyboard.type('سلام! چطوری؟', { delay: 120 });
+  await page.waitForTimeout(3000);
+
+  await page.screenshot({ path: '3_typed.png' });
+
+  console.log('✅ Complete!');
+  await browser.close();
 })();
