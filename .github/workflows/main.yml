@@ -1,73 +1,98 @@
-- name: Recorder Script
+name: Stealth Recorder
+on: [push]
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@v1.1.0
+      
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        
+    - name: Install
+      run: |
+        rm -rf node_modules package*.json || true
+        npm init -y
+        npm i puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth ffmpeg-static
+        
+    - name: Create Dirs
+      run: mkdir -p user_data record
+        
+    - name: Recorder Script
       run: |
         cat > record.js << 'EOF'
-        const puppeteer = require('**puppeteer-extra**');  // 👈 درست شد!
+        const puppeteer = require('puppeteer-extra');
         const StealthPlugin = require('puppeteer-extra-plugin-stealth');
         puppeteer.use(StealthPlugin());
-        const fs = require('fs');
         const { spawn } = require('child_process');
-        
-        const TEXT_TO_TYPE = 'سلام! چطوری؟';
-        const CLICK_X = 134;
-        const CLICK_Y = 254;
         
         (async () => {
           try {
-            // Xvfb آماده
             const browser = await puppeteer.launch({
-              headless: **false**,
+              headless: false,
               userDataDir: './user_data',
               executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
               args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--window-size=1366,768',
-                '--disable-gpu'
+                '--window-size=1366,768'
               ]
             });
             
             const page = await browser.newPage();
             await page.setViewport({width:1366, height:768});
             
-            // ضبط 25 ثانیه
             const ffmpeg = require('ffmpeg-static');
             const recordProc = spawn(ffmpeg, [
-              '-f', 'x11grab',
-              '-s', '1366x768',
-              '-r', '25',
-              '-i', ':99.0',
-              '-t', '25',
-              '-c:v', 'libx264',
-              '-pix_fmt', 'yuv420p',
-              './record/demo.mp4'
+              '-f', 'x11grab', '-s', '1366x768', '-r', '25', '-i', ':99.0',
+              '-t', '25', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', './record/demo.mp4'
             ]);
             
             console.log('🎥 ضبط شروع...');
             
             await page.goto('https://chatgpt.com', {timeout: 60000});
             await page.waitForTimeout(3000);
+            await page.screenshot({path: 'step1.png'});
             
-            await page.screenshot({path: 'step1_chatgpt.png'});
-            
-            // کلیک
-            await page.mouse.click(CLICK_X, CLICK_Y);
+            await page.mouse.click(134, 254);
             await page.waitForTimeout(2000);
-            await page.screenshot({path: 'step2_click.png'});
+            await page.screenshot({path: 'step2.png'});
             
-            // تایپ
-            await page.keyboard.type(TEXT_TO_TYPE, {delay: 80});
+            await page.keyboard.type('سلام! چطوری؟', {delay: 80});
             await page.waitForTimeout(3000);
-            await page.screenshot({path: 'step3_type.png'});
+            await page.screenshot({path: 'step3.png'});
             
-            // پایان
             recordProc.kill();
             await page.waitForTimeout(2000);
             await browser.close();
-            
-            console.log('✅ ویدیو: record/demo.mp4');
-          } catch (e) {
-            console.error('❌ خطا:', e.message);
+            console.log('✅ تمام!');
+          } catch(e) {
+            console.error('❌', e.message);
           }
         })();
         EOF
+        
+    - name: Run Recorder
+      run: |
+        export DISPLAY=:99
+        sudo Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
+        sleep 3
+        node record.js
+        
+    - name: Commit Results
+      run: |
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git add *.png record/* || true
+        git rm -r --cached user_data || true
+        git commit -m "🎥 Video $(date)" || true
+        git push origin HEAD:main || true
