@@ -1,6 +1,5 @@
-name: Stealth Recorder
-on: 
-  - push
+name: 🎥 Stealth Recorder
+on: [push]
 permissions:
   contents: write
 
@@ -18,16 +17,16 @@ jobs:
       with:
         node-version: 20
         
-    - name: Install
+    - name: Install Dependencies
       run: |
         rm -rf node_modules package*.json || true
         npm init -y
         npm i puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth ffmpeg-static
         
-    - name: Create Dirs
+    - name: Create Directories
       run: mkdir -p user_data record
         
-    - name: Recorder Script
+    - name: Create Recorder Script
       run: |
         cat > record.js << 'EOF'
         const puppeteer = require('puppeteer-extra');
@@ -37,56 +36,97 @@ jobs:
         
         (async () => {
           try {
+            console.log('🚀 Browser launch...');
             const browser = await puppeteer.launch({
               headless: false,
               userDataDir: './user_data',
               executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-              args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--window-size=1366,768']
+              args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--window-size=1366,768'
+              ]
             });
             
             const page = await browser.newPage();
-            await page.setViewport({width:1366,height:768});
+            await page.setViewport({width: 1366, height: 768});
             
-            const delay = ms => new Promise(r => setTimeout(r, ms));
+            const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
             
+            console.log('🎥 Starting screen record...');
             const ffmpeg = require('ffmpeg-static');
             const recordProc = spawn(ffmpeg, [
-              '-f','x11grab','-s','1366x768','-r','25','-i',':99.0',
-              '-t','25','-c:v','libx264','-pix_fmt','yuv420p','./record/demo.mp4'
+              '-f', 'x11grab',
+              '-s', '1366x768',
+              '-r', '25',
+              '-i', ':99.0',
+              '-t', '30',
+              '-c:v', 'libx264',
+              '-pix_fmt', 'yuv420p',
+              './record/demo.mp4'
             ]);
             
-            console.log('🎥 ضبط...');
+            // ChatGPT
+            console.log('🌐 Loading chatgpt.com...');
+            await page.goto('https://chatgpt.com', { timeout: 60000 });
+            await delay(4000);
+            await page.screenshot({ path: 'step1_chatgpt.png' });
             
-            await page.goto('https://chatgpt.com',{timeout:60000});
+            // Click
+            console.log('🖱️ Clicking (134, 254)...');
+            await page.mouse.click(134, 254);
+            await delay(2500);
+            await page.screenshot({ path: 'step2_clicked.png' });
+            
+            // Type
+            console.log('⌨️ Typing "سلام! چطوری؟"...');
+            await page.keyboard.type('سلام! چطوری؟', { delay: 100 });
+            await delay(4000);
+            await page.screenshot({ path: 'step3_typed.png' });
+            
+            // Finish
+            console.log('⏹️ Stopping record...');
+            recordProc.kill('SIGINT');
             await delay(3000);
-            await page.screenshot({path:'step1.png'});
-            
-            await page.mouse.click(134,254);
-            await delay(2000);
-            await page.screenshot({path:'step2.png'});
-            
-            await page.keyboard.type('سلام! چطوری؟',{delay:80});
-            await delay(3000);
-            await page.screenshot({path:'step3.png'});
-            
-            recordProc.kill();
-            await delay(2000);
             await browser.close();
-            console.log('✅ OK!');
-          } catch(e) {
-            console.error('❌',e.message);
+            
+            console.log('✅ Video saved: record/demo.mp4');
+            console.log('📸 Screenshots: step1.png, step2.png, step3.png');
+          } catch (error) {
+            console.error('❌ Error:', error.message);
           }
         })();
         EOF
         
-    - name: Run
+    - name: Run Recorder
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
-        sleep 3
+        sleep 5
         node record.js
+        sleep 3
         
-    - name: Commit
+    - name: Debug Files
       run: |
-        git config user.name github-actions[bot]
-        git config user.email 418982
+        echo "📂 Files:"
+        ls -la *.png || true
+        ls -la record/ || true
+        du -sh record/* || true
+        
+    - name: Commit & Push
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        
+        git add -f *.png record/* record.js package*.json || true
+        git add -f . || true
+        
+        git status
+        
+        git rm -rf --cached user_data || true
+        git commit -m "🎥 Recorder Update $(date +%Y-%m-%d_%H:%M:%S)" || true
+        git push origin HEAD:main || true
+        
+        echo "✅ Pushed to repo!"
