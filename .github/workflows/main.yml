@@ -120,7 +120,7 @@ SCRIPT
         git add *.png video.mp4 type.js package*.json || true
         git rm -rf user_data || true
         git commit -m "🎬 Typing Demo: $(date '+%Y-%m-%d %H:%M')
-        
+
 📸 3 screenshots captured
 🎥 video.mp4 recorded (45s)
 ✨ Stealth Puppeteer + FFmpeg" || true
@@ -133,3 +133,4 @@ SCRIPT
         ls -la *.png video.* 2>/dev/null | cat || echo "No files"
         echo "=== Video Info ==="
         [ -f video.mp4 ] && ffmpeg -i video.mp4 2>&1 | head -20 || echo "No video"
+
