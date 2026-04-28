@@ -1,50 +1,100 @@
-name: Screenshot
+name: Stealth Type with Video
 on: [push]
 permissions:
   contents: write
 
 jobs:
-  screenshot:
+  type:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
     
-    - uses: browser-actions/setup-chrome@v1
-    
-    - name: Screenshot
-      run: |
-        npm init -y
-        npm i puppeteer
-        cat > screenshot.js << 'EOF'
-        const puppeteer = require('puppeteer');
-        const fs = require('fs');
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@v1.1.0
+      
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
         
-        // JSON config بساز/بروزرسانی
-        const config = {
-          url: 'https://fantastic-spork-g4jj74wxv55j3w9v7.github.dev/',
-          width: 1920,
-          height: 1080,
-          timestamp: new Date().toISOString()
-        };
-        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+    - name: Install
+      run: |
+        rm -rf node_modules package*.json || true
+        npm init -y
+        npm i puppeteer-core@latest puppeteer-extra puppeteer-extra-plugin-stealth ffmpeg-static
+
+    - name: Create User Data Dir
+      run: mkdir -p user_data
+    
+    - name: Script
+      run: |
+        cat > type.js << EOF
+        const puppeteer = require('puppeteer-extra');
+        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+        puppeteer.use(StealthPlugin());
+
+        const TEXT_TO_TYPE = 'سلام! چطوری؟';
+        const CLICK_X = 134;
+        const CLICK_Y = 254;
         
         (async () => {
-          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
-          const page = await browser.newPage();
-          await page.setViewport({width: config.width, height: config.height});
-          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 15000});
-          await page.screenshot({path: 'screenshot.png', fullPage: true});
-          await browser.close();
-          console.log('✅ Screenshot & config.json saved!');
+          try {
+            const browser = await puppeteer.launch({
+              headless: false, // برای ضبط صفحه باید غیرسرشار باشد
+              userDataDir: './user_data',
+              executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+            const page = await browser.newPage();
+            await page.setViewport({width:1366, height:768});
+            
+            // شروع ضبط صفحه با ffmpeg
+            const { spawn } = require('child_process');
+            const ffmpeg = spawn('ffmpeg', [
+              '-y', // برکت کنید
+              '-f', 'x11grab', // مخصوص لینوکس، برای ضبط صفحه
+              '-video_size', '1366x768', 
+              '-i', ':0.0+0,0', // صفحه نمایش، در محیط‌های مجازی ممکن است نیاز به تنظیم داشته باشد
+              '-framerate', '30', 
+              '-pix_fmt', 'yuv420p', 
+              'output.mp4'
+            ]);
+
+            console.log('Loading chatgpt.com...');
+            await page.goto('https://chatgpt.com', {timeout: 60000});
+            await new Promise(r => setTimeout(r, 5000));
+            
+            await page.screenshot({path: 'before_click.png'});
+            await page.mouse.click(CLICK_X, CLICK_Y);
+            await new Promise(r => setTimeout(r, 5000));
+            await page.screenshot({path: 'after_click.png'});
+            await page.keyboard.type(TEXT_TO_TYPE, {delay: 100});
+            await new Promise(r => setTimeout(r, 3000));
+            await page.screenshot({path: 'after_type.png'});
+            await browser.close();
+
+            // نگه داشتن ضبط
+            ffmpeg.kill('SIGINT');
+            console.log('ضبط پایان یافت.');
+
+          } catch (error) {
+            console.error('❌ Error:', error.message);
+          }
         })();
         EOF
-        node screenshot.js
-    
-    - name: Commit
+
+    - name: Run
+      run: node type.js
+
+    - name: Save Video
       run: |
-        git config user.name "github-actions"
-        git config user.email "actions@github.com"
-        git add screenshot.png config.json
-        git commit -m "📸 Screenshot + config.json [skip ci]" || exit 0
-        git push || exit 0
+        mv output.mp4 ./video.mp4
+
+    - name: Commit & Push
+      run: |
+        git config user.name github-actions[bot]
+        git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+        git add *.png type.js package*.json video.mp4 || true
+        git rm -r --cached user_data || true
+        git commit -m "Add video of automation $(date +%Y-%m-%d\ %H:%M:%S)" || true
+        git push origin HEAD:main || true
