@@ -74,19 +74,18 @@ jobs:
                 let found = false;
                 for (const selector of selectors) {
                   try {
-                    await page.waitForSelector(selector, { timeout: 2000 });
+                    await page.waitForSelector(selector, { timeout: 1000 });
                     await page.click(selector);
-                    await page.keyboard.type(text, { delay: 50 }); // سرعت معمولی
+                    await page.keyboard.type(text, { delay: 50 });
                     await page.keyboard.press('Enter');
                     console.log(`✅ "${text}" تایپ شد`);
                     found = true;
                     break;
                   } catch(e) {
-                    console.log(`⏭️ ${selector} نبود`);
+                    // ساکت رد شو
                   }
                 }
                 
-                // **حتی اگر پیدا نکرد هم تایپ کن**
                 if (!found) {
                   console.log('⚠️ input نبود → مستقیم تایپ');
                   await page.keyboard.type(text, { delay: 50 });
@@ -97,8 +96,8 @@ jobs:
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 console.log(`🖱️ کلیک: (${x}, ${y})`);
-                // **همیشه کلیک کن - خطا نده**
-                await page.mouse.click(x, y).catch(() => console.log('⚠️ کلیک skip'));
+                await page.mouse.click(x, y).catch(() => {});
+                
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
                 console.log(`⏳ ${s}s...`);
@@ -119,19 +118,19 @@ jobs:
     
     - name: Execute with Xvfb & FFmpeg
       run: |
-        Xvfb :99 -screen 0 1366x768x24 -ac +extension GLX +render -noreset &
+        Xvfb :99 -screen 0 1366x768x24 -ac +extension GLX +render -noreset &>/dev/null &
         XVFB_PID=$!
         export DISPLAY=:99
-        sleep 5
+        sleep 3
         
         ffmpeg -nostdin -loglevel error -f x11grab -show_region 0 -draw_mouse 0 \
                -s 1366x768 -r 30 -i :99.0 -t 120 -c:v libx264 -pix_fmt yuv420p \
-               -crf 23 -preset ultrafast -y ./record/demo_full.mp4 &
+               -crf 23 -preset ultrafast -y ./record/demo_full.mp4 &>/dev/null &
         
         FFMPEG_PID=$!
-        sleep 3
+        sleep 2
         
-        node record.cjs
+        node record.cjs || true
         
         echo "🛑 Kill..."
         kill -9 $FFMPEG_PID $XVFB_PID 2>/dev/null || true
