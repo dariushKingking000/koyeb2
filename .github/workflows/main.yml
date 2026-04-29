@@ -76,18 +76,12 @@ JS_EOF
         Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
         sleep 3
-        
-        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-          -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p \
-          record/demo.mp4 &
+        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p record/demo.mp4 &
         FFMPEG_PID=$!
-        
         sleep 3
         node record/run.cjs
-        
         sleep 5
         kill $FFMPEG_PID 2>/dev/null || true
-        
         ls -la record/
     
     - name: Upload recording
