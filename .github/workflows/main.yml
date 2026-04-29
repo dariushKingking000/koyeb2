@@ -37,7 +37,6 @@ jobs:
         (async () => {
           let browser = null;
           let page = null;
-          const TIMEOUT_MS = 20000;
           
           try {
             const data = await fs.readFile('./instructions.txt', 'utf8');
@@ -68,87 +67,58 @@ jobs:
               console.log(`#${i+1}/${instructions.length}: ${cmd}`);
               const cmdStart = Date.now();
               
-              if (!page || page.isClosed?.()) {
-                console.log('⚠️ Page بسته → STOP');
-                break;
-              }
-              
-              let timeoutId = null;
+              if (!page || page.isClosed?.()) break;
               
               if (cmd.startsWith('[type ')) {
-                console.log('⌨️ تایپ شروع (20s timeout)...');
+                console.log('⌨️ تایپ...');
                 const text = cmd.slice(6, -1);
-                let success = false;
                 
-                timeoutId = setTimeout(async () => {
-                  if (!success) {
-                    console.log('⏰ 20s تایپ تمام → بعدی!');
-                    await new Promise(r => setTimeout(r, 500));
-                  }
-                }, TIMEOUT_MS);
-                
+                // سریع تایپ بدون timeout لاگ
                 try {
-                  const input = await page.waitForSelector(selectors.join(','), { timeout: 3000 });
-                  await input.click({ timeout: 2000 });
+                  const input = await Promise.race([
+                    page.waitForSelector(selectors.join(','), { timeout: 2000 }),
+                    new Promise((_, reject) => setTimeout(() => reject(), 2000))
+                  ]);
+                  await input.click();
                   await page.keyboard.type(text, { delay: 30 });
                   await page.keyboard.press('Enter');
-                  console.log(`✅ "${text}" selector OK`);
-                  success = true;
-                } catch(e1) {
-                  try {
-                    await page.keyboard.type(text.slice(0, 50), { delay: 30 });
-                    await page.keyboard.press('Enter');
-                    console.log(`✅ "${text}" مستقیم OK`);
-                    success = true;
-                  } catch(e2) {
-                    console.log('⚠️ تایپ fail');
-                  }
+                  console.log(`✅ "${text}"`);
+                } catch {
+                  await page.keyboard.type(text.slice(0, 50), { delay: 30 });
+                  await page.keyboard.press('Enter');
+                  console.log(`✅ "${text}"`);
                 }
                 
-                clearTimeout(timeoutId);
-                if (success) {
-                  console.log('✅ تایپ تمام → 1s pause');
-                  await new Promise(r => setTimeout(r, 1000));
-                } else {
-                  await new Promise(r => setTimeout(r, 500));
-                }
+                await new Promise(r => setTimeout(r, 800)); // 0.8s
                 
               } else if (cmd.startsWith('[click ')) {
-                console.log('🖱️ کلیک شروع (20s timeout)...');
+                console.log('🖱️ کلیک...');
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 
-                timeoutId = setTimeout(async () => {
-                  console.log('⏰ 20s کلیک تمام → بعدی!');
-                  await new Promise(r => setTimeout(r, 500));
-                }, TIMEOUT_MS);
-                
                 try {
-                  await page.mouse.click(x, y, { timeout: 5000 });
-                  console.log(`✅ کلیک (${x},${y}) OK`);
-                  await new Promise(r => setTimeout(r, 800)); // 0.8s بعد کلیک
-                } catch(e) {
-                  console.log('⚠️ کلیک fail');
+                  await page.mouse.click(x, y);
+                  console.log(`✅ (${x},${y})`);
+                } catch {
+                  console.log('⚠️ کلیک');
                 }
                 
-                clearTimeout(timeoutId);
+                await new Promise(r => setTimeout(r, 600));
                 
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ ${s} ثانیه`);
+                console.log(`⏳ ${s}s`);
                 await new Promise(r => setTimeout(r, s * 1000));
               }
               
               const elapsed = Math.round((Date.now() - cmdStart) / 1000);
-              console.log(`⏱️ ${elapsed}s برای #${i+1} → بعدی`);
+              console.log(`⏱️ ${elapsed}s → #${i+2}`);
             }
             
-            console.log('🏁 3s نهایی...');
-            await new Promise(r => setTimeout(r, 3000));
+            await new Promise(r => setTimeout(r, 2000));
             
           } catch(e) {
-            console.log('❌ خطا:', e.message);
+            console.log('❌', e.message);
           } finally {
-            console.log('🔒 Cleanup...');
             try { if (page) await page.close(); } catch(e) {}
             try { if (browser) await browser.close(); } catch(e) {}
             console.log('✅ تمام');
@@ -180,9 +150,8 @@ jobs:
         git config --global user.name "Auto Record Bot"
         git config --global user.email "bot@github.com"
         git add screen-record.mp4 instructions.txt record.cjs
-        git commit -m "🎥 Record $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
+        git commit -m "🎥 $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
         git push
         
-        echo "✅ در repo:"
         ls -la screen-record.mp4
         du -sh screen-record.mp4
