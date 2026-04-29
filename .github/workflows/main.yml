@@ -1,132 +1,33 @@
-name: 🎥 Stealth Recorder
-on: [push]
-permissions:
-  contents: write
-
+name: Screen Record Bot
+on: [workflow_dispatch]
 jobs:
   record:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Chrome
-      uses: browser-actions/setup-chrome@v1.1.0
-      
-    - name: Setup Node
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
+        cache: 'npm'
         
     - name: Install Dependencies
       run: |
-        rm -rf node_modules package*.json || true
-        npm init -y
-        npm i puppeteer-core puppeteer-extra puppeteer-extra-plugin-stealth ffmpeg-static
+        sudo apt update
+        sudo apt install -y xvfb ffmpeg
+        npm install
         
     - name: Create Directories
-      run: mkdir -p user_data record
-        
-    - name: Create Recorder Script
-      run: |
-        cat > record.js << 'EOF'
-        const puppeteer = require('puppeteer-extra');
-        const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-        puppeteer.use(StealthPlugin());
-        const { spawn } = require('child_process');
-        
-        (async () => {
-          try {
-            console.log('🚀 Browser launch...');
-            const browser = await puppeteer.launch({
-              headless: false,
-              userDataDir: './user_data',
-              executablePath: '/opt/hostedtoolcache/chromium/latest/x64/chrome',
-              args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--window-size=1366,768'
-              ]
-            });
-            
-            const page = await browser.newPage();
-            await page.setViewport({width: 1366, height: 768});
-            
-            const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-            
-            console.log('🎥 Starting screen record...');
-            const ffmpeg = require('ffmpeg-static');
-            const recordProc = spawn(ffmpeg, [
-              '-f', 'x11grab',
-              '-s', '1366x768',
-              '-r', '25',
-              '-i', ':99.0',
-              '-t', '30',
-              '-c:v', 'libx264',
-              '-pix_fmt', 'yuv420p',
-              './record/demo.mp4'
-            ]);
-            
-            // ChatGPT
-            console.log('🌐 Loading chatgpt.com...');
-            await page.goto('https://chatgpt.com', { timeout: 60000 });
-            await delay(4000);
-            await page.screenshot({ path: 'step1_chatgpt.png' });
-            
-            // Click
-            console.log('🖱️ Clicking (134, 254)...');
-            await page.mouse.click(134, 254);
-            await delay(2500);
-            await page.screenshot({ path: 'step2_clicked.png' });
-            
-            // Type
-            console.log('⌨️ Typing "سلام! چطوری؟"...');
-            await page.keyboard.type('سلام! چطوری؟', { delay: 100 });
-            await delay(4000);
-            await page.screenshot({ path: 'step3_typed.png' });
-            
-            // Finish
-            console.log('⏹️ Stopping record...');
-            recordProc.kill('SIGINT');
-            await delay(3000);
-            await browser.close();
-            
-            console.log('✅ Video saved: record/demo.mp4');
-            console.log('📸 Screenshots: step1.png, step2.png, step3.png');
-          } catch (error) {
-            console.error('❌ Error:', error.message);
-          }
-        })();
-        EOF
-        
+      run: mkdir -p record user_data
+      
     - name: Run Recorder
-      run: |
-        export DISPLAY=:99
-        Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
-        sleep 5
-        node record.js
-        sleep 3
-        
-    - name: Debug Files
-      run: |
-        echo "📂 Files:"
-        ls -la *.png || true
-        ls -la record/ || true
-        du -sh record/* || true
-        
-    - name: Commit & Push
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        
-        git add -f *.png record/* record.js package*.json || true
-        git add -f . || true
-        
-        git status
-        
-        git rm -rf --cached user_data || true
-        git commit -m "🎥 Recorder Update $(date +%Y-%m-%d_%H:%M:%S)" || true
-        git push origin HEAD:main || true
-        
-        echo "✅ Pushed to repo!"
+      run: node record.js
+      
+    - name: Upload Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: screen-record
+        path: |
+          ./record/*
+          ./instructions.txt
