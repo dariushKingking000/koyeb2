@@ -103,7 +103,6 @@ jobs:
               }
             }
             
-            // ✅ بعد آخرین دستور: دقیقاً 5 ثانیه صبر + close
             console.log('🏁 5 ثانیه دیگه ضبط → تمام!');
             await new Promise(resolve => setTimeout(resolve, 5000));
             await browser.close();
@@ -115,14 +114,28 @@ jobs:
         })();
         JS_EOF
     
+    - name: Create instructions.txt
+      run: |
+        cat > instructions.txt << 'TXT_EOF'
+        [type چطوری؟]
+        [wait 2]
+        [click 134 432]
+        [type سلام! خوبم]
+        [wait 3]
+        [click 200 300]
+        [type شاهکار بود]
+        [wait 5]
+        TXT_EOF
+    
     - name: Execute with Xvfb & FFmpeg
       run: |
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
         sleep 5
         
-        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-               -t 360 -c:v libx264 -pix_fmt yuv420p -crf 23 \
+        # FFmpeg با timeout دقیق
+        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
+               -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
                -y ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
@@ -130,8 +143,11 @@ jobs:
         
         node record.cjs
         
-        sleep 2
+        # فوری kill کن
+        sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
+        pkill -f ffmpeg || true
+        sleep 2
         
         # همه فایل‌ها به record
         mv *.mp4 record/ 2>/dev/null || true
@@ -140,6 +156,7 @@ jobs:
         mv package*.json record/ 2>/dev/null || true
         
         ls -la record/
+        du -sh record/*
     
     - uses: actions/upload-artifact@v4
       with:
