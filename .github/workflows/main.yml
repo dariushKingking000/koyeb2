@@ -12,7 +12,7 @@ jobs:
     
     - name: Install deps
       run: |
-        sudo apt update -y
+        sudo apt update
         sudo apt install -y xvfb ffmpeg
     
     - name: Setup Node
@@ -21,13 +21,12 @@ jobs:
         node-version: 20
         cache: 'npm'
     
-    - name: Install packages
+    - name: Install Puppeteer
       run: |
         npm init -y
         npm install puppeteer
-        echo '{"type": "commonjs"}' >> package.json
     
-    - name: Setup
+    - name: Setup record dir
       run: mkdir -p record
     
     - name: Create record script
@@ -35,73 +34,8 @@ jobs:
         cat > record.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
-        
         (async () => {
-          const instructions = fs.readFileSync('instructions.txt', 'utf8')
-            .split('\n').map(l=>l.trim()).filter(l=>l&&l[0]=='['&&l.slice(-1)==']');
-          
-          console.log('📋 دستورات: ' + instructions.length);
-          
-          const browser = await puppeteer.launch({
-            headless: false,
-            args: ['--no-sandbox', '--disable-dev-shm-usage']
-          });
-          
-          const page = await browser.newPage();
-          await page.setViewport({width:1366, height:768});
-          await page.goto('https://chatgpt.com', {waitUntil:'networkidle0'});
-          await page.waitForTimeout(5000);
-          
-          const selectors = ['textarea','[contenteditable="true"]','[role="textbox"]'];
-          
-          for(let i=0; i<instructions.length; i++){
-            const cmd = instructions[i];
-            console.log(`#${i+1}: ${cmd}`);
-            
-            if(cmd.startsWith('[type ')){
-              const text = cmd.slice(6,-1);
-              for(const sel of selectors){
-                try{
-                  await page.waitForSelector(sel,{timeout:2000});
-                  await page.click(sel);
-                  await page.keyboard.type(text,{delay:50});
-                  console.log('✅ تایپ شد');
-                  break;
-                }catch{}
-              }
-            }else if(cmd.startsWith('[click ')){
-              const [x,y] = cmd.slice(7,-1).split(' ').map(Number);
-              await page.mouse.click(x,y);
-            }else if(cmd.startsWith('[wait ')){
-              const s = parseInt(cmd.slice(6,-1));
-              await page.waitForTimeout(s*1000);
-            }
-          }
-          
-          await page.waitForTimeout(5000);
-          await browser.close();
-        })();
-EOF
-    
-    - name: Record screen
-      run: |
-        Xvfb :99 -screen 0 1366x768x24 &
-        export DISPLAY=:99
-        sleep 3
-        
-        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 \
-          -c:v libx264 -pix_fmt yuv420p -crf 23 record/demo.mp4 &
-        
-        FFMPEG_PID=$!
-        sleep 3
-        node record.js
-        sleep 3
-        kill $FFMPEG_PID || true
-        pkill -f ffmpeg || true
-        
-        ls -la record/
-    
-    - uses: actions/upload-artifact@v4
-      with:
-        name: screen-record
-        path: record/
+          const data = fs.readFileSync('instructions.txt','utf8');
+          const instructions = data.split('\n').map(l=>l.trim()).filter(l=>l&&l.startsWith('[')&&l.endsWith(']'));
+          console.log('📋 ' + instructions.length + ' دستور');
+          const browser
