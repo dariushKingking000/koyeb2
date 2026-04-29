@@ -8,17 +8,21 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Install deps
-      run: sudo apt update -y && sudo apt install -y xvfb ffmpeg
+      run: |
+        sudo apt update -y
+        sudo apt install -y xvfb ffmpeg
     
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Install & Run
+    - name: Setup & Record
       run: |
-        npm init -y && npm i puppeteer
+        npm init -y
+        npm i puppeteer
         mkdir -p record
+        
         cat > record/run.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
@@ -53,11 +57,16 @@ jobs:
           await browser.close();
         })();
 EOF
-        
+
         Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
         sleep 3
-        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 -c:v libx264 -crf 23 record/demo.mp4 &
+        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
+          -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p \
+          record/demo.mp4 &
         FFMPEG_PID=$!
-        sleep 3 && node record/run.js && sleep 5 && kill $FFMPEG_PID 2>/dev/null || true
+        sleep 3
+        node record/run.js
+        sleep 5
+        kill $FFMPEG_PID 2>/dev/null || true
         ls -la record/
