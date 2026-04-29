@@ -103,10 +103,10 @@ jobs:
               }
             }
             
-            console.log('🏁 5 ثانیه دیگه ضبط → تمام!');
+            console.log('🏁 5 ثانیه انتظار بعد از آخرین دستور...');
             await new Promise(resolve => setTimeout(resolve, 5000));
             await browser.close();
-            console.log('✅ تمام!');
+            console.log('✅ تمام! (ffmpeg kill میشه)');
           } catch (e) {
             console.error('❌ خطا:', e.message);
             process.exit(1);
@@ -130,11 +130,11 @@ jobs:
         
         node record.cjs
         
-        # فوری kill کن
-        sleep 3
+        # **دقیقاً بعد از تمام شدن اسکریپت** - 5 ثانیه صبر کرده
+        sleep 1
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
-        sleep 2
+        sleep 1
         
         # همه فایل‌ها به record
         cp instructions.txt record/ 2>/dev/null || true
@@ -149,4 +149,3 @@ jobs:
       with:
         name: 🎥-complete
         path: record/
-       
