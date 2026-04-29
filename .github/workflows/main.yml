@@ -34,6 +34,10 @@ jobs:
         const puppeteer = require('puppeteer');
         const fs = require('fs/promises');
 
+        async function safeWait(timeout) {
+          return new Promise(resolve => setTimeout(resolve, timeout));
+        }
+
         (async () => {
           let browser = null;
           let page = null;
@@ -53,8 +57,8 @@ jobs:
             
             page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await new Promise(r => setTimeout(r, 3000));
+            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0', timeout: 15000 });
+            await safeWait(3000);
             console.log('🌐 ChatGPT آماده');
             
             const selectors = [
@@ -65,20 +69,23 @@ jobs:
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
               console.log(`#${i+1}/${instructions.length}: ${cmd}`);
-              const cmdStart = Date.now();
               
               if (!page || page.isClosed?.()) {
-                console.log('⚠️ Page بسته → STOP');
+                console.log('⚠️ Page بسته');
                 break;
               }
               
+              // هر دستور دقیق 20s max
+              const start = Date.now();
+              const maxTime = 20000;
+              
               if (cmd.startsWith('[type ')) {
-                console.log('⌨️ تایپ...');
+                console.log('⌨️ تایپ (20s max)...');
                 const text = cmd.slice(6, -1);
                 
-                // بدون timeout لاگ - فقط 3s max
                 try {
-                  await page.waitForSelector(selectors.join(','), { timeout: 1000 });
+                  // 3s تلاش selector
+                  await page.waitForSelector(selectors.join(','), { timeout: 3000 });
                   await page.click(selectors.join(','));
                   await page.keyboard.type(text, { delay: 25 });
                   await page.keyboard.press('Enter');
@@ -89,39 +96,43 @@ jobs:
                   console.log(`✅ "${text}"`);
                 }
                 
-                await new Promise(r => setTimeout(r, 800));
-                
               } else if (cmd.startsWith('[click ')) {
-                console.log('🖱️ کلیک...');
+                console.log('🖱️ کلیک (20s max)...');
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 
                 try {
                   await page.mouse.click(x, y);
-                  console.log(`✅ کلیک`);
+                  console.log(`✅ کلیک (${x},${y})`);
                 } catch {
                   console.log('⚠️ کلیک');
                 }
                 
-                await new Promise(r => setTimeout(r, 500));
-                
               } else if (cmd.startsWith('[wait ')) {
-                const s = parseInt(cmd.slice(6, -1));
+                const s = Math.min(parseInt(cmd.slice(6, -1)), 20);
                 console.log(`⏳ ${s}s`);
-                await new Promise(r => setTimeout(r, s * 1000));
+                await safeWait(s * 1000);
               }
               
-              const elapsed = Math.round((Date.now() - cmdStart) / 1000);
-              console.log(`⏱️ ${elapsed}s → بعدی`);
+              // دقیق 20s کل دستور
+              const elapsed = Date.now() - start;
+              const remaining = Math.max(0, maxTime - elapsed);
+              if (remaining > 0) await safeWait(remaining);
+              
+              const totalTime = Math.round((Date.now() - start) / 1000);
+              if (i === instructions.length - 1) {
+                console.log('🏁 تمام شد!');
+              } else {
+                console.log(`⏱️ ${totalTime}s تمام → #${i+2}`);
+              }
             }
             
-            console.log('🏁 تمام');
-            await new Promise(r => setTimeout(r, 2000));
-            
           } catch(e) {
-            console.log('❌', e.message);
+            console.log('❌ خطا:', e.message);
           } finally {
+            console.log('🔒 بستن...');
             try { if (page) await page.close(); } catch(e) {}
             try { if (browser) await browser.close(); } catch(e) {}
+            console.log('✅ OK');
           }
         })();
         JS_EOF
@@ -153,6 +164,5 @@ jobs:
         git commit -m "🎥 $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
         git push
         
-        echo "✅ repo:"
         ls -la screen-record.mp4
         du -sh screen-record.mp4
