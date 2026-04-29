@@ -1,8 +1,10 @@
-{
-  "name": "screen-recorder",
-  "version": "1.0.0",
-  "type": "module",
-  "dependencies": {
-    "puppeteer": "^23.0.0"
-  }
-}
+- name: Install packages
+      run: |
+        rm -rf node_modules package*.json
+        npm init -y
+        npm install puppeteer@latest
+        node -e "
+          const pkg = require('./package.json');
+          pkg.type = 'commonjs';
+          require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2));
+        "
