@@ -3,30 +3,25 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+
 jobs:
   record:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
+    
     - name: Install deps
       run: |
         sudo apt update -y
-        sudo apt install -y xvfb ffmpeg xkbdata
-        npm init -y
-        npm install puppeteer
-        echo '{"type": "commonjs"}' > package.json
+        sudo apt install -y xvfb ffmpeg -y
+        
     - name: Setup
       run: mkdir -p record
-    - name: Create instructions.txt
-      run: echo "" > instructions.txt
+    
     - name: Create record.js
       run: |
-        cat > record.cjs << 'JS_EOF'
+        cat > record.js << 'JS_EOF'
         const puppeteer = require('puppeteer');
-        const { spawn } = require('child_process');
         const fs = require('fs/promises');
 
         (async () => {
@@ -38,16 +33,9 @@ jobs:
             
             console.log(`📋 ${instructions.length} دستور\n🎥 ضبط...`);
             
-            spawn('Xvfb', [':99', '-screen', '0', '1366x768x24']);
-            spawn('ffmpeg', [
-              '-f', 'x11grab', '-s', '1366x768', '-r', '25', 
-              '-i', ':99+0,0', '-t', '120', '-c:v', 'libx264', 
-              './record/demo_full.mp4'
-            ]);
-
             const browser = await puppeteer.launch({
               headless: false,
-              args: ['--display=:99', '--no-sandbox', '--disable-dev-shm-usage']
+              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
             
             const page = await browser.newPage();
@@ -77,22 +65,41 @@ jobs:
             
             await page.waitForTimeout(5000);
             await browser.close();
-            console.log('🎉 demo_full.mp4 آماده!');
+            console.log('🎉 اسکریپت اجرا شد!');
           } catch (e) {
             console.error('❌ خطا:', e.message);
             process.exit(1);
           }
         })();
         JS_EOF
-    - name: Execute
+    
+    - name: Execute with Xvfb & FFmpeg
       run: |
+        # Start Xvfb
+        Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
-        Xvfb :99 -screen 0 1366x768x24 -kb &
-        sleep 5
-        node record.cjs
+        sleep 3
+        
+        # Start FFmpeg recording
+        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
+               -t 300 -c:v libx264 -pix_fmt yuv420p \
+               ./record/demo_full.mp4 &
+        
+        FFMPEG_PID=$!
+        sleep 2
+        
+        # Run puppeteer script
+        node record.js
+        
+        # Stop FFmpeg
+        kill $FFMPEG_PID
+        sleep 2
+        
+        mv demo_full.mp4 record/
+    
     - uses: actions/upload-artifact@v4
       with:
+        name: 🎥-complete
         path: |
           record/
           instructions.txt
-        name: 🎥-complete
