@@ -13,8 +13,8 @@ jobs:
     - name: Install deps
       run: |
         sudo apt update -y
-        sudo apt install -y xvfb ffmpeg -y
-        
+        sudo apt install -y xvfb ffmpeg
+    
     - name: Setup Node & Puppeteer
       uses: actions/setup-node@v4
       with:
@@ -28,7 +28,7 @@ jobs:
         npm install puppeteer@latest
         echo '{"type": "commonjs"}' > package.json
     
-    - name: Setup
+    - name: Setup record folder
       run: mkdir -p record
     
     - name: Create record.cjs
@@ -112,7 +112,7 @@ jobs:
             process.exit(1);
           }
         })();
-        JS_EOF
+JS_EOF
     
     - name: Create instructions.txt
       run: |
@@ -125,7 +125,7 @@ jobs:
         [click 200 300]
         [type شاهکار بود]
         [wait 5]
-        TXT_EOF
+TXT_EOF
     
     - name: Execute with Xvfb & FFmpeg
       run: |
@@ -133,7 +133,6 @@ jobs:
         export DISPLAY=:99
         sleep 5
         
-        # FFmpeg با timeout دقیق
         timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
                -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
                -y ./record/demo_full.mp4 &
@@ -143,14 +142,11 @@ jobs:
         
         node record.cjs
         
-        # فوری kill کن
         sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
         sleep 2
         
-        # همه فایل‌ها به record
-        mv *.mp4 record/ 2>/dev/null || true
         mv instructions.txt record/ 2>/dev/null || true
         mv record.cjs record/ 2>/dev/null || true
         mv package*.json record/ 2>/dev/null || true
