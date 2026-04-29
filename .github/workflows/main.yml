@@ -7,6 +7,8 @@ on:
 jobs:
   record:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 👈 این مهمه!
     steps:
     - uses: actions/checkout@v4
     
@@ -75,7 +77,6 @@ jobs:
                 break;
               }
               
-              // هر دستور دقیق 20s max
               const start = Date.now();
               const maxTime = 20000;
               
@@ -84,7 +85,6 @@ jobs:
                 const text = cmd.slice(6, -1);
                 
                 try {
-                  // 3s تلاش selector
                   await page.waitForSelector(selectors.join(','), { timeout: 3000 });
                   await page.click(selectors.join(','));
                   await page.keyboard.type(text, { delay: 25 });
@@ -113,7 +113,6 @@ jobs:
                 await safeWait(s * 1000);
               }
               
-              // دقیق 20s کل دستور
               const elapsed = Date.now() - start;
               const remaining = Math.max(0, maxTime - elapsed);
               if (remaining > 0) await safeWait(remaining);
@@ -158,8 +157,8 @@ jobs:
         pkill -f ffmpeg || true
         pkill -f Xvfb || true
         
-        git config --global user.name "Auto Record Bot"
-        git config --global user.email "bot@github.com"
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git add screen-record.mp4 instructions.txt record.cjs
         git commit -m "🎥 $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
         git push
