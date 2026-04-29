@@ -77,7 +77,7 @@ EOF
     - name: 📤 Upload
       uses: actions/upload-artifact@v4
       with:
-        name: 🎥-complete
         path: |
-          ./record/**
+          record/
           instructions.txt
+        name: 🎥-complete
