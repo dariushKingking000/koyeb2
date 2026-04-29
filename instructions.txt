@@ -1,0 +1,8 @@
+[type چطوری؟]
+[wait 2s]
+[click 134 432]
+[type سلام! خوبم]
+[wait 3s]
+[click 200 300]
+[type شاهکار بود]
+[wait 5s]
