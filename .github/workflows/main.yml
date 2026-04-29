@@ -19,51 +19,47 @@ jobs:
     
     - name: Setup & Record
       run: |
-        npm init -y
-        npm i puppeteer
-        mkdir -p record
+        npm init -y && npm i puppeteer && mkdir -p record
         
         cat > record/run.js << 'EOF'
-        const puppeteer = require('puppeteer');
-        const fs = require('fs');
-        (async () => {
-          const instructions = fs.readFileSync('instructions.txt', 'utf8')
-            .split('\n').map(l => l.trim())
-            .filter(l => l && l[0] === '[' && l.slice(-1) === ']');
-          const browser = await puppeteer.launch({headless: false, args: ['--no-sandbox']});
-          const page = await browser.newPage();
-          await page.setViewport({width: 1366, height: 768});
-          await page.goto('https://chatgpt.com', {waitUntil: 'networkidle0'});
-          await page.waitForTimeout(5000);
-          
-          for (const cmd of instructions) {
-            console.log(cmd);
-            if (cmd.startsWith('[type ')) {
-              const text = cmd.slice(6, -1);
-              const sel = 'textarea, [contenteditable="true"], [role="textbox"]';
-              try {
-                await page.click(sel);
-                await page.keyboard.type(text, {delay: 80});
-              } catch (e) {}
-            } else if (cmd.startsWith('[click ')) {
-              const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-              await page.mouse.click(x, y);
-            } else if (cmd.startsWith('[wait ')) {
-              const s = parseInt(cmd.slice(6, -1));
-              await page.waitForTimeout(s * 1000);
-            }
-          }
-          await page.waitForTimeout(5000);
-          await browser.close();
-        })();
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+(async () => {
+  const instructions = fs.readFileSync('instructions.txt', 'utf8')
+    .split('\n').map(l => l.trim())
+    .filter(l => l && l[0] === '[' && l.slice(-1) === ']');
+  const browser = await puppeteer.launch({headless: false, args: ['--no-sandbox']});
+  const page = await browser.newPage();
+  await page.setViewport({width: 1366, height: 768});
+  await page.goto('https://chatgpt.com', {waitUntil: 'networkidle0'});
+  await page.waitForTimeout(5000);
+  
+  for (const cmd of instructions) {
+    console.log(cmd);
+    if (cmd.startsWith('[type ')) {
+      const text = cmd.slice(6, -1);
+      const sel = 'textarea, [contenteditable="true"], [role="textbox"]';
+      try {
+        await page.click(sel);
+        await page.keyboard.type(text, {delay: 80});
+      } catch (e) {}
+    } else if (cmd.startsWith('[click ')) {
+      const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
+      await page.mouse.click(x, y);
+    } else if (cmd.startsWith('[wait ')) {
+      const s = parseInt(cmd.slice(6, -1));
+      await page.waitForTimeout(s * 1000);
+    }
+  }
+  await page.waitForTimeout(5000);
+  await browser.close();
+})();
 EOF
 
         Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
         sleep 3
-        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-          -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p \
-          record/demo.mp4 &
+        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p record/demo.mp4 &
         FFMPEG_PID=$!
         sleep 3
         node record/run.js
