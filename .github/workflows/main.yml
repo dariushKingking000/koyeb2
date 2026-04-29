@@ -67,29 +67,29 @@ jobs:
               console.log(`#${i+1}/${instructions.length}: ${cmd}`);
               const cmdStart = Date.now();
               
-              if (!page || page.isClosed?.()) break;
+              if (!page || page.isClosed?.()) {
+                console.log('⚠️ Page بسته → STOP');
+                break;
+              }
               
               if (cmd.startsWith('[type ')) {
                 console.log('⌨️ تایپ...');
                 const text = cmd.slice(6, -1);
                 
-                // سریع تایپ بدون timeout لاگ
+                // بدون timeout لاگ - فقط 3s max
                 try {
-                  const input = await Promise.race([
-                    page.waitForSelector(selectors.join(','), { timeout: 2000 }),
-                    new Promise((_, reject) => setTimeout(() => reject(), 2000))
-                  ]);
-                  await input.click();
-                  await page.keyboard.type(text, { delay: 30 });
+                  await page.waitForSelector(selectors.join(','), { timeout: 1000 });
+                  await page.click(selectors.join(','));
+                  await page.keyboard.type(text, { delay: 25 });
                   await page.keyboard.press('Enter');
                   console.log(`✅ "${text}"`);
                 } catch {
-                  await page.keyboard.type(text.slice(0, 50), { delay: 30 });
+                  await page.keyboard.type(text, { delay: 25 });
                   await page.keyboard.press('Enter');
                   console.log(`✅ "${text}"`);
                 }
                 
-                await new Promise(r => setTimeout(r, 800)); // 0.8s
+                await new Promise(r => setTimeout(r, 800));
                 
               } else if (cmd.startsWith('[click ')) {
                 console.log('🖱️ کلیک...');
@@ -97,12 +97,12 @@ jobs:
                 
                 try {
                   await page.mouse.click(x, y);
-                  console.log(`✅ (${x},${y})`);
+                  console.log(`✅ کلیک`);
                 } catch {
                   console.log('⚠️ کلیک');
                 }
                 
-                await new Promise(r => setTimeout(r, 600));
+                await new Promise(r => setTimeout(r, 500));
                 
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
@@ -111,9 +111,10 @@ jobs:
               }
               
               const elapsed = Math.round((Date.now() - cmdStart) / 1000);
-              console.log(`⏱️ ${elapsed}s → #${i+2}`);
+              console.log(`⏱️ ${elapsed}s → بعدی`);
             }
             
+            console.log('🏁 تمام');
             await new Promise(r => setTimeout(r, 2000));
             
           } catch(e) {
@@ -121,7 +122,6 @@ jobs:
           } finally {
             try { if (page) await page.close(); } catch(e) {}
             try { if (browser) await browser.close(); } catch(e) {}
-            console.log('✅ تمام');
           }
         })();
         JS_EOF
@@ -153,5 +153,6 @@ jobs:
         git commit -m "🎥 $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
         git push
         
+        echo "✅ repo:"
         ls -la screen-record.mp4
         du -sh screen-record.mp4
