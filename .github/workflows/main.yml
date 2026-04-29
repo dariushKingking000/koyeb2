@@ -5,77 +5,86 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: 🟢 Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/setup-node@v4
       with:
         node-version: 20
-        
-    - name: 🔧 Install
+    - name: Install deps
       run: |
         sudo apt update -y
         sudo apt install -y xvfb ffmpeg
         npm init -y
         npm install puppeteer
-        
-    - name: 📁 Setup
-      run: mkdir -p record user_data
-      
-    - name: 🎬 record.js
+    - name: Setup
+      run: mkdir -p record
+    - name: Create record.js
       run: |
-        cat > record.js <<- 'EOF'
-        import puppeteer from 'puppeteer';
-        import { spawn } from 'child_process';
-        import fs from 'fs/promises';
+        cat > record.js << 'JS_EOF'
+        const puppeteer = require('puppeteer');
+        const { spawn } = require('child_process');
+        const fs = require('fs/promises');
 
         (async () => {
-          const instructions = await fs.readFile('./instructions.txt','utf8')
-            .then(c=>c.split('\\n').map(l=>l.trim()).filter(l=>l&&l.startsWith('[')&&l.endsWith(']')))
-            .catch(()=> {console.log('❌ instructions.txt'); process.exit(1);});
-          console.log(`📋 \${instructions.length} دستور\\n🎥 ضبط...\\n`);
+          try {
+            const data = await fs.readFile('./instructions.txt', 'utf8');
+            const instructions = data.split('\n')
+              .map(l => l.trim())
+              .filter(l => l && l.startsWith('[') && l.endsWith(']'));
+            
+            console.log(`📋 ${instructions.length} دستور\\n🎥 ضبط...`);
+            
+            spawn('Xvfb', [':99', '-screen', '0', '1366x768x24']);
+            spawn('ffmpeg', [
+              '-f', 'x11grab', '-s', '1366x768', '-r', '25', 
+              '-i', ':99+0,0', '-t', '120', '-c:v', 'libx264', 
+              './record/demo_full.mp4'
+            ]);
 
-          spawn('Xvfb', [':99', '-screen', '0', '1366x768x24']);
-          spawn('ffmpeg', ['-f','x11grab','-s','1366x768','-r','25','-i',':99+0,0','-t','120','-c:v','libx264','./record/demo_full.mp4']);
+            const browser = await puppeteer.launch({
+              headless: false,
+              args: ['--display=:99', '--no-sandbox', '--disable-dev-shm-usage']
+            });
+            
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1366, height: 768 });
+            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+            await page.waitForTimeout(2000);
 
-          const browser = await puppeteer.launch({headless:false,args:['--display=:99','--no-sandbox']});
-          const page = await browser.newPage();
-          await page.setViewport({width:1366,height:768});
-          await page.goto('https://chatgpt.com',{waitUntil:'networkidle0'});
-          await page.waitForTimeout(2000);
-
-          for(let i=0;i<instructions.length;i++){
-            const cmd=instructions[i];
-            console.log(`🔄 #\${i+1}/\${instructions.length}: \${cmd}`);
-            if(cmd.startsWith('[type ')){
-              const text=cmd.slice(6,-1);
-              await page.click('textarea');
-              await page.keyboard.type(text,{delay:80});
-              console.log(`✅ "\${text}"\\n`);
-            }else if(cmd.startsWith('[click ')){
-              const [x,y]=cmd.slice(7,-1).split(' ').map(Number);
-              await page.mouse.click(x,y);
-              console.log(`🖱️ (\${x},\${y})\\n`);
-            }else if(cmd.startsWith('[wait ')){
-              const s=parseInt(cmd.slice(6,-1));
-              await page.waitForTimeout(s*1000);
-              console.log(`⏳ \${s}s\\n`);
+            for (let i = 0; i < instructions.length; i++) {
+              const cmd = instructions[i];
+              console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
+              
+              if (cmd.startsWith('[type ')) {
+                const text = cmd.slice(6, -1);
+                await page.click('textarea');
+                await page.keyboard.type(text, { delay: 80 });
+                console.log(`✅ "${text}"`);
+              } else if (cmd.startsWith('[click ')) {
+                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
+                await page.mouse.click(x, y);
+                console.log(`🖱️ (${x},${y})`);
+              } else if (cmd.startsWith('[wait ')) {
+                const s = parseInt(cmd.slice(6, -1));
+                await page.waitForTimeout(s * 1000);
+                console.log(`⏳ ${s}s`);
+              }
             }
+            
+            await page.waitForTimeout(5000);
+            await browser.close();
+            console.log('🎉 demo_full.mp4 آماده!');
+          } catch (e) {
+            console.error('❌ خطا:', e.message);
+            process.exit(1);
           }
-          await page.waitForTimeout(5000);
-          await browser.close();
-          console.log('🎉 demo_full.mp4 آماده!');
         })();
-        EOF
-        
-    - name: 🎥 Execute
+        JS_EOF
+    - name: Execute
       run: |
         export DISPLAY=:99
         Xvfb :99 -screen 0 1366x768x24 &
-        sleep 2
+        sleep 3
         node record.js
-        
-    - name: 📤 Upload
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
         path: |
           record/
