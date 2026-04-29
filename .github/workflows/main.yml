@@ -134,8 +134,8 @@ TXT_EOF
         sleep 5
         
         timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-               -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
-               -y ./record/demo_full.mp4 &
+          -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
+          -y ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
         sleep 5
