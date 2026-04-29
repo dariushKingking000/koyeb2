@@ -1,5 +1,8 @@
-name: Screen Record Bot
-on: [push, workflow_dispatch]
+name: 🎥 Screen Record Bot
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   record:
@@ -7,59 +10,82 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install deps
-      run: sudo apt update -y && sudo apt install -y xvfb ffmpeg
+    - name: Setup Xvfb & deps
+      run: |
+        sudo apt update -y
+        sudo apt install -y xvfb ffmpeg
     
-    - name: Setup Node
+    - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
     
-    - name: Setup & Record
+    - name: Create record script
       run: |
+        mkdir -p record/
         npm init -y
-        npm i puppeteer
-        mkdir -p record
-        cat > record/run.js << 'EOF'
+        npm install puppeteer@latest
+        
+        cat > record/run.cjs << 'JS_EOF'
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 (async () => {
-  const instructions = fs.readFileSync('instructions.txt', 'utf8')
-    .split('\n').map(l => l.trim())
-    .filter(l => l && l[0] === '[' && l.slice(-1) === ']');
-  const browser = await puppeteer.launch({headless: false, args: ['--no-sandbox']});
+  const data = fs.readFileSync('instructions.txt', 'utf8');
+  const instructions = data.split('\n').map(l => l.trim()).filter(l => l && l[0] === '[' && l.slice(-1) === ']');
+  console.log(`📋 Found ${instructions.length} instructions`);
+  
+  const browser = await puppeteer.launch({
+    headless: false,
+    args: ['--no-sandbox', '--disable-dev-shm-usage']
+  });
   const page = await browser.newPage();
-  await page.setViewport({width: 1366, height: 768});
-  await page.goto('https://chatgpt.com', {waitUntil: 'networkidle0'});
+  await page.setViewport({ width: 1366, height: 768 });
+  
+  await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
   await page.waitForTimeout(5000);
+  
   for (const cmd of instructions) {
-    console.log(cmd);
+    console.log('🔄', cmd);
     if (cmd.startsWith('[type ')) {
       const text = cmd.slice(6, -1);
-      const sel = 'textarea, [contenteditable="true"], [role="textbox"]';
-      try {
-        await page.click(sel);
-        await page.keyboard.type(text, {delay: 80});
-      } catch (e) {}
+      const selectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]'];
+      for (const sel of selectors) {
+        try {
+          await page.waitForSelector(sel, { timeout: 2000 });
+          await page.click(sel);
+          await page.keyboard.type(text, { delay: 80 });
+          break;
+        } catch (e) {}
+      }
     } else if (cmd.startsWith('[click ')) {
       const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
       await page.mouse.click(x, y);
     } else if (cmd.startsWith('[wait ')) {
-      const s = parseInt(cmd.slice(6, -1));
-      await page.waitForTimeout(s * 1000);
+      const seconds = parseInt(cmd.slice(6, -1));
+      await page.waitForTimeout(seconds * 1000);
     }
   }
+  
   await page.waitForTimeout(5000);
   await browser.close();
 })();
-EOF
+JS_EOF
+    
+    - name: Start recording
+      run: |
         Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
         sleep 3
-        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p record/demo.mp4 &
+        
+        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
+          -t 120 -c:v libx264 -crf 23 -pix_fmt yuv420p \
+          record/demo.mp4 &
         FFMPEG_PID=$!
+        
         sleep 3
-        node record/run.js
+        node record/run.cjs
+        
         sleep 5
         kill $FFMPEG_PID 2>/dev/null || true
+        
         ls -la record/
