@@ -1,5 +1,5 @@
 name: 🎥 Screen Record Bot
-on: 
+on:
   push:
     branches: [main]
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
         sudo apt update -y
         sudo apt install -y xvfb ffmpeg
     
-    - name: Setup Node & Puppeteer
+    - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
@@ -23,99 +23,85 @@ jobs:
     
     - name: Install packages
       run: |
-        rm -f package.json package-lock.json
         npm init -y
-        npm install puppeteer@latest
-        echo '{"type": "commonjs"}' > package.json
+        npm install puppeteer
+        echo '{"type": "commonjs"}' >> package.json
     
-    - name: Setup record folder
+    - name: Setup
       run: mkdir -p record
     
-    - name: Create record.cjs
+    - name: Create record script
       run: |
-        cat > record.cjs << 'JS_EOF'
+        cat > record.js << 'EOF'
         const puppeteer = require('puppeteer');
-        const fs = require('fs/promises');
+        const fs = require('fs');
+        
         (async () => {
-          try {
-            const data = await fs.readFile('./instructions.txt', 'utf8');
-            const instructions = data.split('\n').map(l => l.trim()).filter(l => l && l.startsWith('[') && l.endsWith(']'));
-            console.log(`📋 ${instructions.length} دستور\n🎥 شروع...`);
-            const browser = await puppeteer.launch({
-              headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-            });
-            const page = await browser.newPage();
-            await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            console.log('🌐 صفحه لود شد');
-            const selectors = ['textarea', '[contenteditable="true"]', '[data-id="root"] textarea', 'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'];
-            for (let i = 0; i < instructions.length; i++) {
-              const cmd = instructions[i];
-              console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
-              if (cmd.startsWith('[type ')) {
-                console.log('⌨️  جستجو input...');
-                let found = false;
-                for (const selector of selectors) {
-                  try {
-                    await page.waitForSelector(selector, { timeout: 3000 });
-                    const el = await page.$(selector);
-                    const box = await el.boundingBox();
-                    console.log(`✅ ${selector} : (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
-                    await el.click();
-                    const text = cmd.slice(6, -1);
-                    await page.keyboard.type(text, { delay: 80 });
-                    console.log(`✅ "${text}" تایپ شد`);
-                    found = true;
-                    break;
-                  } catch(e) {}
-                }
-                if (!found) {
-                  console.log('⚠️ input نبود → Enter');
-                  await page.keyboard.press('Enter');
-                }
-              } else if (cmd.startsWith('[click ')) {
-                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                console.log(`🖱️ کلیک: (${x}, ${y})`);
-                await page.mouse.click(x, y);
-              } else if (cmd.startsWith('[wait ')) {
-                const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ ${s}s...`);
-                await new Promise(resolve => setTimeout(resolve, s * 1000));
+          const instructions = fs.readFileSync('instructions.txt', 'utf8')
+            .split('\n').map(l=>l.trim()).filter(l=>l&&l[0]=='['&&l.slice(-1)==']');
+          
+          console.log('📋 دستورات: ' + instructions.length);
+          
+          const browser = await puppeteer.launch({
+            headless: false,
+            args: ['--no-sandbox', '--disable-dev-shm-usage']
+          });
+          
+          const page = await browser.newPage();
+          await page.setViewport({width:1366, height:768});
+          await page.goto('https://chatgpt.com', {waitUntil:'networkidle0'});
+          await page.waitForTimeout(5000);
+          
+          const selectors = ['textarea','[contenteditable="true"]','[role="textbox"]'];
+          
+          for(let i=0; i<instructions.length; i++){
+            const cmd = instructions[i];
+            console.log(`#${i+1}: ${cmd}`);
+            
+            if(cmd.startsWith('[type ')){
+              const text = cmd.slice(6,-1);
+              for(const sel of selectors){
+                try{
+                  await page.waitForSelector(sel,{timeout:2000});
+                  await page.click(sel);
+                  await page.keyboard.type(text,{delay:50});
+                  console.log('✅ تایپ شد');
+                  break;
+                }catch{}
               }
+            }else if(cmd.startsWith('[click ')){
+              const [x,y] = cmd.slice(7,-1).split(' ').map(Number);
+              await page.mouse.click(x,y);
+            }else if(cmd.startsWith('[wait ')){
+              const s = parseInt(cmd.slice(6,-1));
+              await page.waitForTimeout(s*1000);
             }
-            console.log('🏁 5 ثانیه دیگه ضبط → تمام!');
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            await browser.close();
-            console.log('✅ تمام!');
-          } catch (e) {
-            console.error('❌ خطا:', e.message);
-            process.exit(1);
           }
+          
+          await page.waitForTimeout(5000);
+          await browser.close();
         })();
-JS_EOF
+EOF
     
-    - name: Execute with Xvfb & FFmpeg
+    - name: Record screen
       run: |
-        Xvfb :99 -screen 0 1366x768x24 -ac &
+        Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
-        sleep 5
-        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 -y ./record/demo_full.mp4 &
-        FFMPEG_PID=$!
-        sleep 5
-        node record.cjs
         sleep 3
-        kill $FFMPEG_PID 2>/dev/null || true
+        
+        ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 \
+          -c:v libx264 -pix_fmt yuv420p -crf 23 record/demo.mp4 &
+        
+        FFMPEG_PID=$!
+        sleep 3
+        node record.js
+        sleep 3
+        kill $FFMPEG_PID || true
         pkill -f ffmpeg || true
-        sleep 2
-        cp instructions.txt record/ 2>/dev/null || true
-        cp record.cjs record/ 2>/dev/null || true
-        cp package*.json record/ 2>/dev/null || true
+        
         ls -la record/
-        du -sh record/*
     
     - uses: actions/upload-artifact@v4
       with:
-        name: complete-record
+        name: screen-record
         path: record/
