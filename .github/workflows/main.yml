@@ -23,13 +23,10 @@ jobs:
     
     - name: Install packages
       run: |
-        rm -f package.json package-lock.json
+        rm -f package*.json
         npm init -y
         npm install puppeteer@latest
         echo '{"type": "commonjs"}' > package.json
-    
-    - name: Setup
-      run: mkdir -p record
     
     - name: Create record.cjs
       run: |
@@ -38,8 +35,8 @@ jobs:
         const fs = require('fs/promises');
 
         (async () => {
-          const TIMEOUT = 20000; // 20s
-          const POLL_INTERVAL = 500; // 0.5s
+          let browser = null;
+          let page = null;
           
           try {
             const data = await fs.readFile('./instructions.txt', 'utf8');
@@ -47,139 +44,125 @@ jobs:
               .map(l => l.trim())
               .filter(l => l && l.startsWith('[') && l.endsWith(']'));
             
-            console.log(`📋 ${instructions.length} دستور\n🎥 شروع...`);
+            console.log(`📋 ${instructions.length} دستور`);
             
-            const browser = await puppeteer.launch({
+            browser = await puppeteer.launch({
               headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security']
+              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
             
-            const page = await browser.newPage();
+            page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0', timeout: 30000 });
+            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+            await new Promise(r => setTimeout(r, 3000));
+            console.log('🌐 ChatGPT آماده');
             
-            await new Promise(r => setTimeout(r, 4000));
-            console.log('🌐 صفحه لود شد');
-
             const selectors = [
               'div[contenteditable]', 'textarea', '[contenteditable="true"]', 
-              '[data-id="root"] textarea', '.ProseMirror', 'prompt-textarea', 
-              '[role="textbox"]', 'textarea[placeholder*="message"]'
+              '[data-id="root"] textarea', '.ProseMirror', '[role="textbox"]'
             ];
 
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
-              console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
-              const cmdStart = Date.now();
+              console.log(`#${i+1}/${instructions.length}: ${cmd}`);
+              
+              if (!page || page.isClosed?.()) {
+                console.log('⚠️ Page بسته → STOP');
+                break;
+              }
               
               if (cmd.startsWith('[type ')) {
                 const text = cmd.slice(6, -1);
-                console.log('⌨️ تایپ شروع...');
+                console.log('⌨️ تایپ...');
                 
-                let success = false;
-                const typeStart = Date.now();
-                
-                while (Date.now() - typeStart < TIMEOUT) {
-                  try {
-                    // اول input رو پیدا کن
-                    const input = await page.waitForSelector(selectors.join(','), { timeout: 2000 });
-                    await input.click();
-                    await page.keyboard.type(text, { delay: 30 });
-                    await page.keyboard.press('Enter');
-                    console.log(`✅ "${text}" تایپ شد (${(Date.now()-typeStart)/1000}s)`);
-                    success = true;
-                    break;
-                  } catch(e) {
-                    await new Promise(r => setTimeout(r, POLL_INTERVAL));
-                  }
-                }
-                
-                if (!success) {
-                  console.log('⚠️ تایپ timeout → مستقیم');
-                  await page.keyboard.type(text, { delay: 30 });
+                try {
+                  // تلاش 1: selector پیدا کن
+                  const input = await page.waitForSelector(selectors.join(','), { timeout: 3000 });
+                  await input.click();
+                  await page.keyboard.type(text, { delay: 40 });
                   await page.keyboard.press('Enter');
-                  console.log(`✅ "${text}" مستقیم تایپ`);
+                  console.log(`✅ "${text}" selector OK`);
+                } catch(e1) {
+                  try {
+                    // تلاش 2: مستقیم تایپ (کوتاه)
+                    await page.keyboard.type(text.slice(0, 40), { delay: 40 });
+                    await page.keyboard.press('Enter');
+                    console.log(`✅ "${text}" مستقیم OK`);
+                  } catch(e2) {
+                    console.log('⚠️ تایپ رد شد');
+                  }
                 }
                 
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                console.log(`🖱️ کلیک: (${x}, ${y})`);
-                
-                let clickSuccess = false;
-                const clickStart = Date.now();
-                
-                while (Date.now() - clickStart < TIMEOUT) {
-                  try {
-                    await page.mouse.click(x, y);
-                    console.log(`✅ کلیک (${x},${y}) (${(Date.now()-clickStart)/1000}s)`);
-                    clickSuccess = true;
-                    break;
-                  } catch(e) {
-                    await new Promise(r => setTimeout(r, POLL_INTERVAL));
-                  }
-                }
-                
-                if (!clickSuccess) {
-                  console.log('⚠️ کلیک timeout → رد شد');
+                console.log(`🖱️ کلیک (${x},${y})`);
+                try {
+                  await page.mouse.click(x, y);
+                  console.log('✅ کلیک موفق');
+                } catch(e) {
+                  console.log('⚠️ کلیک رد');
                 }
                 
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ ${s}s انتظار...`);
+                console.log(`⏳ ${s} ثانیه`);
                 await new Promise(r => setTimeout(r, s * 1000));
               }
               
-              // 20s timeout check
-              if (Date.now() - cmdStart > TIMEOUT) {
-                console.log('⏰ 20s تمام → بعدی!');
-              }
-              
-              // 1s break بین دستورها
+              // 1 ثانیه استراحت
               await new Promise(r => setTimeout(r, 1000));
             }
             
-            console.log('🏁 5s نهایی...');
+            console.log('🏁 5 ثانیه نهایی...');
             await new Promise(r => setTimeout(r, 5000));
-            await browser.close();
-            console.log('✅ تمام شد!');
             
-          } catch (e) {
-            console.error('❌ خطا:', e.message);
-            await browser?.close();
+          } catch(e) {
+            console.log('❌ خطا:', e.message);
+          } finally {
+            console.log('🔒 Cleanup...');
+            try { if (page) await page.close(); } catch(e) {}
+            try { if (browser) await browser.close(); } catch(e) {}
+            console.log('✅ تمام');
           }
         })();
         JS_EOF
     
-    - name: Execute with Xvfb & FFmpeg
+    - name: Record Screen
       run: |
-        Xvfb :99 -screen 0 1366x768x24 -ac +extension GLX +render -noreset &>/dev/null &
+        # Xvfb راه اندازی
+        Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
         export DISPLAY=:99
         sleep 3
         
-        ffmpeg -nostdin -loglevel error -f x11grab -draw_mouse 1 \
-               -s 1366x768 -r 30 -i :99.0 -t 180 -c:v libx264 -pix_fmt yuv420p \
-               -crf 23 -preset fast -y demo.mp4 &
+        # FFmpeg ضبط (بهترین کیفیت)
+        ffmpeg -loglevel error -f x11grab -draw_mouse 1 \
+          -s 1366x768 -r 30 -i :99 \
+          -t 180 -c:v libx264 -crf 18 -preset medium \
+          -pix_fmt yuv420p demo.mp4 &
         
         FFMPEG_PID=$!
         sleep 2
         
-        timeout 150s node record.cjs || true
+        # اجرا
+        node record.cjs
         
-        kill -9 $FFMPEG_PID 2>/dev/null || true
-        pkill -9 -f ffmpeg || true
-        pkill -9 -f Xvfb || true
+        # Kill همه
         sleep 3
+        kill $FFMPEG_PID 2>/dev/null || true
+        pkill -f ffmpeg || true
+        pkill -f Xvfb || true
         
-        mkdir -p record
-        cp instructions.txt record/ 2>/dev/null || true
-        mv demo.mp4 record/demo_full.mp4 2>/dev/null || true
-        mv record.cjs record/ 2>/dev/null || true
-        mv package*.json record/ 2>/dev/null || true
+        # فایل‌ها رو مرتب کن
+        mkdir -p output
+        mv demo.mp4 output/
+        cp instructions.txt output/ 2>/dev/null || true
+        cp record.cjs output/
         
-        ls -la record/
-        du -sh record/*
+        echo "📁 فایل‌ها:"
+        ls -la output/
+        du -sh output/*
     
-    - uses: actions/upload-artifact@v4
-      with:
-        name: 🎥-complete
-        path: record/
+    - name: Show final result
+      run: |
+        echo "🎥 ویدیو آماده در output/demo.mp4"
+        echo "📋 دستورات در output/instructions.txt"
