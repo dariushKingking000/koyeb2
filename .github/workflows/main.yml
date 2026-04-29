@@ -37,7 +37,7 @@ jobs:
         (async () => {
           let browser = null;
           let page = null;
-          const TIMEOUT_MS = 20000; // 20s
+          const TIMEOUT_MS = 20000;
           
           try {
             const data = await fs.readFile('./instructions.txt', 'utf8');
@@ -80,20 +80,23 @@ jobs:
                 const text = cmd.slice(6, -1);
                 let success = false;
                 
-                timeoutId = setTimeout(() => {
-                  if (!success) console.log('⏰ 20s تایپ تمام → بعدی!');
+                timeoutId = setTimeout(async () => {
+                  if (!success) {
+                    console.log('⏰ 20s تایپ تمام → بعدی!');
+                    await new Promise(r => setTimeout(r, 500));
+                  }
                 }, TIMEOUT_MS);
                 
                 try {
-                  const input = await page.waitForSelector(selectors.join(','), { timeout: 5000 });
-                  await input.click();
-                  await page.keyboard.type(text, { delay: 40 });
+                  const input = await page.waitForSelector(selectors.join(','), { timeout: 3000 });
+                  await input.click({ timeout: 2000 });
+                  await page.keyboard.type(text, { delay: 30 });
                   await page.keyboard.press('Enter');
                   console.log(`✅ "${text}" selector OK`);
                   success = true;
                 } catch(e1) {
                   try {
-                    await page.keyboard.type(text.slice(0, 40), { delay: 40 });
+                    await page.keyboard.type(text.slice(0, 50), { delay: 30 });
                     await page.keyboard.press('Enter');
                     console.log(`✅ "${text}" مستقیم OK`);
                     success = true;
@@ -103,19 +106,26 @@ jobs:
                 }
                 
                 clearTimeout(timeoutId);
-                if (!success) await new Promise(r => setTimeout(r, 1000));
+                if (success) {
+                  console.log('✅ تایپ تمام → 1s pause');
+                  await new Promise(r => setTimeout(r, 1000));
+                } else {
+                  await new Promise(r => setTimeout(r, 500));
+                }
                 
               } else if (cmd.startsWith('[click ')) {
                 console.log('🖱️ کلیک شروع (20s timeout)...');
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 
-                timeoutId = setTimeout(() => {
+                timeoutId = setTimeout(async () => {
                   console.log('⏰ 20s کلیک تمام → بعدی!');
+                  await new Promise(r => setTimeout(r, 500));
                 }, TIMEOUT_MS);
                 
                 try {
                   await page.mouse.click(x, y, { timeout: 5000 });
                   console.log(`✅ کلیک (${x},${y}) OK`);
+                  await new Promise(r => setTimeout(r, 800)); // 0.8s بعد کلیک
                 } catch(e) {
                   console.log('⚠️ کلیک fail');
                 }
@@ -129,8 +139,7 @@ jobs:
               }
               
               const elapsed = Math.round((Date.now() - cmdStart) / 1000);
-              console.log(`⏱️ ${elapsed}s برای #${i+1}`);
-              await new Promise(r => setTimeout(r, 500));
+              console.log(`⏱️ ${elapsed}s برای #${i+1} → بعدی`);
             }
             
             console.log('🏁 3s نهایی...');
@@ -149,12 +158,10 @@ jobs:
     
     - name: Record & Commit to Repo
       run: |
-        # Xvfb
         Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
         export DISPLAY=:99
         sleep 3
         
-        # FFmpeg (عالی)
         ffmpeg -loglevel error -f x11grab -draw_mouse 1 \
           -s 1366x768 -r 30 -i :99 \
           -t 180 -c:v libx264 -crf 18 -preset medium \
@@ -163,22 +170,19 @@ jobs:
         FFMPEG_PID=$!
         sleep 2
         
-        # Puppeteer
         node record.cjs
         
-        # Kill
         sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
         pkill -f Xvfb || true
         
-        # Git commit/push
         git config --global user.name "Auto Record Bot"
         git config --global user.email "bot@github.com"
         git add screen-record.mp4 instructions.txt record.cjs
-        git commit -m "🎥 Record $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1) | $(wc -l < instructions.txt) دستور" || true
+        git commit -m "🎥 Record $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
         git push
         
-        echo "✅ فایل‌ها در repo:"
+        echo "✅ در repo:"
         ls -la screen-record.mp4
         du -sh screen-record.mp4
