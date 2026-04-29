@@ -1,196 +1,89 @@
-name: 🎥 Screen Record Bot
-on: 
-  push:
-    branches: [main]
-  workflow_dispatch:
+# ❌ این را DELETE کنید
+- name: Create record.cjs (✅ NO ERRORS)
 
-permissions:
-  contents: write  # 👈 دسترسی push
+# ✅ این را جایگزین کنید
+- name: Create record.cjs v2 ✅ FIXED
+  run: |
+    cat > record.cjs << 'EOF
+const puppeteer = require('puppeteer');
+const fs = require('fs/promises');
 
-jobs:
-  record:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
+(async () => {
+  try {
+    const data = await fs.readFile('./record/instructions.txt', 'utf8');
+    const instructions = data.split('\n').map(l => l.trim()).filter(Boolean);
     
-    - name: Install deps
-      run: |
-        sudo apt update -y
-        sudo apt install -y xvfb ffmpeg -y
+    console.log(`📋 ${instructions.length} instructions loaded`);
+    
+    const browser = await puppeteer.launch({
+      headless: false,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1366, height: 768 });
+    await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+    
+    await new Promise(r => setTimeout(r, 5000));
+    console.log('🌐 ChatGPT loaded successfully');
+
+    const inputSelectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]'];
+
+    for (let i = 0; i < instructions.length; i++) {
+      const cmd = instructions[i];
+      if (!cmd.startsWith('[') || !cmd.endsWith(']')) continue;
+      
+      console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
+      
+      if (cmd.startsWith('[type ')) {
+        const text = cmd.slice(6, -1);
+        let typed = false;
         
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install packages (FIXED)
-      run: |
-        rm -rf node_modules package*.json
-        npm init -y
-        npm install puppeteer@latest
-        echo '{"type": "commonjs"}' > package.json  # 👈 > بجای >>
-
-    - name: Create record folder & instructions
-      run: |
-        mkdir -p record
-        cat > record/instructions.txt << 'TXT_EOF'
-        [wait 3]
-        [type چطوری؟]
-        [wait 2]
-        [click 134 432]
-        [type سلام! خوبم]
-        [wait 3]
-        [click 200 300]
-        [type شاهکار بود]
-        [wait 5]
-        TXT_EOF
-    
-    - name: Create record.cjs (IMPROVED)
-      run: |
-        cat > record.cjs << 'JS_EOF'
-        const puppeteer = require('puppeteer');
-        const fs = require('fs/promises');
-
-        (async () => {
+        for (const selector of inputSelectors) {
           try {
-            const data = await fs.readFile('./record/instructions.txt', 'utf8');
-            const instructions = data.split('\n')
-              .map(l => l.trim())
-              .filter(l => l && l.startsWith('[') && l.endsWith(']'));
-            
-            console.log(`📋 ${instructions.length} دستور\n🎥 شروع...`);
-            
-            const browser = await puppeteer.launch({
-              headless: false,
-              args: [
-                '--no-sandbox', 
-                '--disable-dev-shm-usage', 
-                '--disable-gpu',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor'
-              ]
-            });
-            
-            const page = await browser.newPage();
-            await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0', timeout: 30000 });
-            
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            console.log('🌐 ChatGPT لود شد');
-
-            const selectors = [
-              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
-            ];
-
-            for (let i = 0; i < instructions.length; i++) {
-              const cmd = instructions[i];
-              console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
-              
-              if (cmd.startsWith('[type ')) {
-                console.log('⌨️  جستجو input...');
-                let found = false;
-                
-                for (const selector of selectors) {
-                  try {
-                    await page.waitForSelector(selector, { timeout: 5000 });
-                    const el = await page.$(selector);
-                    if (!el) continue;
-                    
-                    const box = await el.boundingBox();
-                    if (!box) continue;
-                    
-                    console.log(`✅ ${selector} : (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
-                    
-                    await el.click({ delay: 100 });
-                    const text = cmd.slice(6, -1);
-                    await page.keyboard.type(text, { delay: 100 });
-                    console.log(`✅ "${text}" تایپ شد`);
-                    found = true;
-                    break;
-                  } catch(e) {
-                    console.log(`❌ ${selector} شکست`);
-                  }
-                }
-                
-                if (!found) {
-                  console.log('⚠️ input پیدا نشد → Enter`);
-                  await page.keyboard.press('Enter');
-                }
-                
-              } else if (cmd.startsWith('[click ')) {
-                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                console.log(`🖱️ کلیک: (${x}, ${y})`);
-                await page.mouse.click(x, y, { delay: 100 });
-              } else if (cmd.startsWith('[wait ')) {
-                const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ ${s}s انتظار...`);
-                await new Promise(resolve => setTimeout(resolve, s * 1000));
-              }
-            }
-            
-            console.log('🏁 10 ثانیه اضافی...');
-            await new Promise(resolve => setTimeout(resolve, 10000));
-            await browser.close();
-            console.log('✅ تمام!');
+            await page.waitForSelector(selector, { timeout: 3000 });
+            await page.click(selector);
+            await page.keyboard.type(text, { delay: 50 });
+            console.log(`✅ Typed: "${text}"`);
+            typed = true;
+            break;
           } catch (e) {
-            console.error('❌ خطا:', e.message);
-            process.exit(1);
+            console.log(`Selector failed: ${selector}`);
           }
-        })();
-        JS_EOF
+        }
+        
+        if (!typed) {
+          console.log('⚠️ No input found, pressing Enter');
+          await page.keyboard.press('Enter');
+        }
+        
+      } else if (cmd.startsWith('[click ')) {
+        const coords = cmd.slice(7, -1).split(' ').map(Number);
+        await page.mouse.click(coords[0], coords[1]);
+        console.log(`🖱️ Clicked (${coords[0]}, ${coords[1]})`);
+        
+      } else if (cmd.startsWith('[wait ')) {
+        const seconds = parseInt(cmd.slice(6, -1));
+        await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+        console.log(`⏳ Waited ${seconds}s`);
+      }
+    }
     
-    - name: Execute with Xvfb & FFmpeg (FIXED)
-      run: |
-        # پاک کردن فایل‌های قبلی
-        rm -f *.mp4 record/*.mp4
-        
-        # Xvfb راه‌اندازی
-        Xvfb :99 -screen 0 1366x768x24 -ac &
-        export DISPLAY=:99
-        sleep 3
-        
-        # FFmpeg با تنظیمات بهتر
-        timeout 240s ffmpeg -f x11grab -s 1366x768 -r 30 -i :99.0 \
-               -t 240 -c:v libx264 -preset fast -crf 23 \
-               -pix_fmt yuv420p -y record/demo.mp4 &
-        
-        FFMPEG_PID=$!
-        sleep 3
-        
-        # اجرای Node
-        node record.cjs || echo "Node completed with warnings"
-        
-        # توقف FFmpeg
-        sleep 5
-        kill $FFMPEG_PID 2>/dev/null || true
-        pkill -f ffmpeg || true
-        sleep 3
-        
-        # انتقال فایل‌ها
-        ls -la record/ || echo "record خالی"
-        du -sh record/* 2>/dev/null || echo "فایل نیست"
+    console.log('🎬 Final wait 10s...');
+    await new Promise(r => setTimeout(r, 10000));
+    await browser.close();
+    console.log('✅ SUCCESS - Browser closed');
     
-    - name: Commit record files (FIXED)
-      if: always()
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        
-        git add record/ || echo "record خالی"
-        
-        if ! git diff --staged --quiet; then
-          git commit -m "🎥 Add screen recording [skip ci]" || echo "No changes to commit"
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git push || echo "Push failed - files still in artifact"
-          echo "✅ فایل‌ها push شد!"
-        else
-          echo "هیچ تغییری نیست"
-        fi
-    
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: 🎥-screen-recording
-        path: record/
-        retention-days: 30
+  } catch (error) {
+    console.error('💥 FATAL ERROR:', error.message);
+    process.exit(1);
+  }
+})();
+EOF
+
+# تست syntax قبل از اجرا
+echo "=== TESTING SYNTAX ==="
+node -c record.cjs && echo "✅ SYNTAX OK" || echo "❌ SYNTAX ERROR"
+echo "=== FIRST 10 LINES ==="
+head -10 record.cjs
+EOF
