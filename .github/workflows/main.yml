@@ -63,27 +63,36 @@ jobs:
               '[data-id="root"] textarea', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
             ];
 
+            const TIMEOUT = 20000; // 20 ثانیه
+            const MAX_WAIT = 5000; // 5 ثانیه نهایی
+
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
               console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
+              
+              const startTime = Date.now();
               
               if (cmd.startsWith('[type ')) {
                 const text = cmd.slice(6, -1);
                 console.log('⌨️ تایپ...');
                 
                 let found = false;
-                for (const selector of selectors) {
-                  try {
-                    await page.waitForSelector(selector, { timeout: 1000 });
-                    await page.click(selector);
-                    await page.keyboard.type(text, { delay: 50 });
-                    await page.keyboard.press('Enter');
-                    console.log(`✅ "${text}" تایپ شد`);
-                    found = true;
-                    break;
-                  } catch(e) {
-                    // ساکت رد شو
+                const typeStart = Date.now();
+                
+                while (Date.now() - typeStart < TIMEOUT) {
+                  for (const selector of selectors) {
+                    try {
+                      await page.waitForSelector(selector, { timeout: 1000 });
+                      await page.click(selector);
+                      await page.keyboard.type(text, { delay: 50 });
+                      await page.keyboard.press('Enter');
+                      console.log(`✅ "${text}" تایپ شد`);
+                      found = true;
+                      break;
+                    } catch(e) {}
                   }
+                  if (found) break;
+                  await new Promise(r => setTimeout(r, 500));
                 }
                 
                 if (!found) {
@@ -96,17 +105,33 @@ jobs:
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 console.log(`🖱️ کلیک: (${x}, ${y})`);
-                await page.mouse.click(x, y).catch(() => {});
+                
+                const clickStart = Date.now();
+                while (Date.now() - clickStart < TIMEOUT) {
+                  try {
+                    await page.mouse.click(x, y);
+                    console.log(`✅ کلیک شد`);
+                    break;
+                  } catch(e) {
+                    await new Promise(r => setTimeout(r, 500));
+                  }
+                }
                 
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
                 console.log(`⏳ ${s}s...`);
                 await new Promise(resolve => setTimeout(resolve, s * 1000));
               }
+              
+              // اگر 20 ثانیه طول کشید → برو بعدی
+              if (Date.now() - startTime > TIMEOUT) {
+                console.log('⏰ 20s timeout → بعدی!');
+                continue;
+              }
             }
             
-            console.log('🏁 4 ثانیه نهایی...');
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            console.log('🏁 5 ثانیه نهایی...');
+            await new Promise(resolve => setTimeout(resolve, MAX_WAIT));
             await browser.close();
             console.log('✅ تمام!');
           } catch (e) {
