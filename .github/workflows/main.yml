@@ -1,19 +1,62 @@
-# ❌ این را DELETE کنید
-- name: Create record.cjs (✅ NO ERRORS)
+ name: 🎥 Screen Record Bot
+on: 
+  push:
+    branches: [main]
+  workflow_dispatch:
 
-# ✅ این را جایگزین کنید
-- name: Create record.cjs v2 ✅ FIXED
-  run: |
-    cat > record.cjs << 'EOF
+permissions:
+  contents: write
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install deps
+      run: |
+        sudo apt update -y
+        sudo apt install -y xvfb ffmpeg
+        
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+    
+    - name: Install packages
+      run: |
+        rm -rf node_modules package*.json
+        npm init -y
+        npm install puppeteer@latest
+        echo '{"type": "commonjs"}' >> package.json
+
+    - name: Create record folder & instructions
+      run: |
+        mkdir -p record
+        cat > record/instructions.txt << 'EOF'
+[wait 3]
+[type چطوری؟]
+[wait 2]
+[click 134 432]
+[type سلام! خوبم]
+[wait 3]
+[click 200 300]
+[type شاهکار بود]
+[wait 5]
+EOF
+    
+    - name: Create record.cjs (✅ FIXED NO ERRORS)
+      run: |
+        cat > record.cjs << 'EOF'
 const puppeteer = require('puppeteer');
 const fs = require('fs/promises');
 
 (async () => {
   try {
     const data = await fs.readFile('./record/instructions.txt', 'utf8');
-    const instructions = data.split('\n').map(l => l.trim()).filter(Boolean);
+    const instructions = data.split('\n').map(l => l.trim()).filter(l => l && l.startsWith('[') && l.endsWith(']'));
     
-    console.log(`📋 ${instructions.length} instructions loaded`);
+    console.log('📋 ' + instructions.length + ' instructions - Starting...');
     
     const browser = await puppeteer.launch({
       headless: false,
@@ -25,65 +68,88 @@ const fs = require('fs/promises');
     await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
     
     await new Promise(r => setTimeout(r, 5000));
-    console.log('🌐 ChatGPT loaded successfully');
+    console.log('🌐 ChatGPT loaded');
 
-    const inputSelectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]'];
+    const selectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]'];
 
     for (let i = 0; i < instructions.length; i++) {
       const cmd = instructions[i];
-      if (!cmd.startsWith('[') || !cmd.endsWith(']')) continue;
-      
-      console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
+      console.log('🔄 #' + (i + 1) + ': ' + cmd);
       
       if (cmd.startsWith('[type ')) {
-        const text = cmd.slice(6, -1);
-        let typed = false;
-        
-        for (const selector of inputSelectors) {
+        let found = false;
+        for (const selector of selectors) {
           try {
-            await page.waitForSelector(selector, { timeout: 3000 });
-            await page.click(selector);
-            await page.keyboard.type(text, { delay: 50 });
-            console.log(`✅ Typed: "${text}"`);
-            typed = true;
+            await page.waitForSelector(selector, { timeout: 5000 });
+            const el = await page.$(selector);
+            await el.click();
+            const text = cmd.slice(6, -1);
+            await page.keyboard.type(text);
+            console.log('✅ Typed: "' + text + '"');
+            found = true;
             break;
-          } catch (e) {
-            console.log(`Selector failed: ${selector}`);
-          }
+          } catch(e) {}
         }
-        
-        if (!typed) {
-          console.log('⚠️ No input found, pressing Enter');
+        if (!found) {
+          console.log('⚠️ Input not found - Enter');
           await page.keyboard.press('Enter');
         }
-        
       } else if (cmd.startsWith('[click ')) {
         const coords = cmd.slice(7, -1).split(' ').map(Number);
         await page.mouse.click(coords[0], coords[1]);
-        console.log(`🖱️ Clicked (${coords[0]}, ${coords[1]})`);
-        
+        console.log('🖱️ Clicked: (' + coords[0] + ', ' + coords[1] + ')');
       } else if (cmd.startsWith('[wait ')) {
-        const seconds = parseInt(cmd.slice(6, -1));
-        await new Promise(resolve => setTimeout(resolve, seconds * 1000));
-        console.log(`⏳ Waited ${seconds}s`);
+        const secs = parseInt(cmd.slice(6, -1));
+        await new Promise(r => setTimeout(r, secs * 1000));
       }
     }
     
-    console.log('🎬 Final wait 10s...');
     await new Promise(r => setTimeout(r, 10000));
     await browser.close();
-    console.log('✅ SUCCESS - Browser closed');
-    
-  } catch (error) {
-    console.error('💥 FATAL ERROR:', error.message);
+    console.log('✅ Complete!');
+  } catch (e) {
+    console.error('❌ Error: ' + e.message);
     process.exit(1);
   }
 })();
 EOF
-
-# تست syntax قبل از اجرا
-echo "=== TESTING SYNTAX ==="
-node -c record.cjs && echo "✅ SYNTAX OK" || echo "❌ SYNTAX ERROR"
-echo "=== FIRST 10 LINES ==="
-head -10 record.cjs
-EOF
+    
+    - name: Execute Recording
+      run: |
+        rm -f record/*.mp4
+        Xvfb :99 -screen 0 1366x768x24 -ac &
+        export DISPLAY=:99
+        sleep 3
+        
+        timeout 300s ffmpeg -f x11grab -s 1366x768 -r 30 -i :99.0 \
+          -t 300 -c:v libx264 -preset ultrafast -crf 23 \
+          -pix_fmt yuv420p record/demo.mp4 &
+        
+        FFMPEG_PID=$!
+        sleep 3
+        node record.cjs
+        
+        sleep 10
+        kill $FFMPEG_PID 2>/dev/null || true
+        pkill -f ffmpeg || true
+        
+        ls -la record/
+        du -sh record/*
+    
+    - name: Commit & Upload
+      if: always()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add record/
+        if ! git diff --staged --quiet; then
+          git commit -m "🎥 Screen recording [skip ci]"
+          git push
+        fi
+    
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: 🎥-demo-video
+        path: record/
+        retention-days: 30                                                                                                                        
