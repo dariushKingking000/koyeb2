@@ -20,9 +20,11 @@ jobs:
       with:
         node-version: 20
         cache: 'npm'
+    
+    - name: Install packages
       run: |
         npm init -y
-        npm install puppeteer fs.promises@latest
+        npm install puppeteer
         echo '{"type": "commonjs"}' > package.json
     
     - name: Setup
@@ -45,7 +47,7 @@ jobs:
             
             const browser = await puppeteer.launch({
               headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--display=:99']
+              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
             
             const page = await browser.newPage();
@@ -85,12 +87,10 @@ jobs:
     
     - name: Execute with Xvfb & FFmpeg
       run: |
-        # Start Xvfb
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
         sleep 5
         
-        # Start FFmpeg recording
         ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
                -t 300 -c:v libx264 -pix_fmt yuv420p -crf 23 \
                -y ./record/demo_full.mp4 &
@@ -98,14 +98,11 @@ jobs:
         FFMPEG_PID=$!
         sleep 3
         
-        # Run puppeteer
         node record.cjs
         
-        # Stop recording
         sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
         
-        # Ensure video exists
         ls -la record/
     
     - uses: actions/upload-artifact@v4
