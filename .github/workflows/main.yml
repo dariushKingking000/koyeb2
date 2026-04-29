@@ -53,7 +53,9 @@ jobs:
             const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await page.waitForTimeout ? page.waitForTimeout(3000) : page.waitFor(3000);
+            
+            // Simple timeout using Promise
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
@@ -70,16 +72,12 @@ jobs:
                 console.log(`🖱️ (${x},${y})`);
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
-                if (page.waitForTimeout) {
-                  await page.waitForTimeout(s * 1000);
-                } else {
-                  await page.waitFor(s * 1000);
-                }
+                await new Promise(resolve => setTimeout(resolve, s * 1000));
                 console.log(`⏳ ${s}s`);
               }
             }
             
-            await page.waitForTimeout ? page.waitForTimeout(5000) : page.waitFor(5000);
+            await new Promise(resolve => setTimeout(resolve, 5000));
             await browser.close();
             console.log('🎉 اسکریپت تمام شد!');
           } catch (e) {
@@ -104,7 +102,7 @@ jobs:
         
         node record.cjs
         
-        sleep 5
+        sleep 10
         kill $FFMPEG_PID 2>/dev/null || true
         
         ls -la record/
