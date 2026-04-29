@@ -54,30 +54,35 @@ jobs:
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
             
-            // Simple timeout using Promise
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await new Promise(resolve => setTimeout(resolve, 5000));
 
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
               console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
               
               if (cmd.startsWith('[type ')) {
-                const text = cmd.slice(6, -1);
-                await page.click('textarea');
-                await page.keyboard.type(text, { delay: 80 });
-                console.log(`✅ "${text}"`);
+                // منتظر textarea بمان
+                try {
+                  await page.waitForSelector('textarea, [contenteditable="true"]', { timeout: 10000 });
+                  await page.click('textarea, [contenteditable="true"]');
+                  const text = cmd.slice(6, -1);
+                  await page.keyboard.type(text, { delay: 80 });
+                  console.log(`✅ "${text}" تایپ شد`);
+                } catch(e) {
+                  console.log(`⚠️ textarea پیدا نشد، رد...`);
+                }
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 await page.mouse.click(x, y);
-                console.log(`🖱️ (${x},${y})`);
+                console.log(`🖱️ کلیک (${x},${y})`);
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
                 await new Promise(resolve => setTimeout(resolve, s * 1000));
-                console.log(`⏳ ${s}s`);
+                console.log(`⏳ صبر ${s}s`);
               }
             }
             
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise(resolve => setTimeout(resolve, 10000));
             await browser.close();
             console.log('🎉 اسکریپت تمام شد!');
           } catch (e) {
@@ -98,11 +103,11 @@ jobs:
                -y ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
-        sleep 3
+        sleep 5
         
         node record.cjs
         
-        sleep 10
+        sleep 15
         kill $FFMPEG_PID 2>/dev/null || true
         
         ls -la record/
