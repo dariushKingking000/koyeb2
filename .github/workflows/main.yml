@@ -8,9 +8,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Install deps
-      run: |
-        sudo apt update -y
-        sudo apt install -y xvfb ffmpeg
+      run: sudo apt update -y && sudo apt install -y xvfb ffmpeg
     
     - name: Setup Node
       uses: actions/setup-node@v4
@@ -19,8 +17,9 @@ jobs:
     
     - name: Setup & Record
       run: |
-        npm init -y && npm i puppeteer && mkdir -p record
-        
+        npm init -y
+        npm i puppeteer
+        mkdir -p record
         cat > record/run.js << 'EOF'
 const puppeteer = require('puppeteer');
 const fs = require('fs');
@@ -33,7 +32,6 @@ const fs = require('fs');
   await page.setViewport({width: 1366, height: 768});
   await page.goto('https://chatgpt.com', {waitUntil: 'networkidle0'});
   await page.waitForTimeout(5000);
-  
   for (const cmd of instructions) {
     console.log(cmd);
     if (cmd.startsWith('[type ')) {
@@ -55,7 +53,6 @@ const fs = require('fs');
   await browser.close();
 })();
 EOF
-
         Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
         sleep 3
