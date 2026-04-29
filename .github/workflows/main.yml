@@ -7,8 +7,6 @@ on:
 jobs:
   record:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write  # 👈 این مهمه!
     steps:
     - uses: actions/checkout@v4
     
@@ -17,18 +15,31 @@ jobs:
         sudo apt update -y
         sudo apt install -y xvfb ffmpeg -y
         
-    - name: Setup Node & Puppeteer
+    - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
-        cache: 'npm'
     
     - name: Install packages
       run: |
-        rm -f package*.json
+        rm -rf node_modules package*.json
         npm init -y
         npm install puppeteer@latest
-        echo '{"type": "commonjs"}' > package.json
+        echo '{"type": "commonjs"}' >> package.json
+    
+    - name: Create record folder & instructions
+      run: |
+        mkdir -p record
+        cat > instructions.txt << 'TXT_EOF'
+        [type چطوری؟]
+        [wait 2]
+        [click 134 432]
+        [type سلام! خوبم]
+        [wait 3]
+        [click 200 300]
+        [type شاهکار بود]
+        [wait 5]
+        TXT_EOF
     
     - name: Create record.cjs
       run: |
@@ -36,132 +47,126 @@ jobs:
         const puppeteer = require('puppeteer');
         const fs = require('fs/promises');
 
-        async function safeWait(timeout) {
-          return new Promise(resolve => setTimeout(resolve, timeout));
-        }
-
         (async () => {
-          let browser = null;
-          let page = null;
-          
           try {
             const data = await fs.readFile('./instructions.txt', 'utf8');
             const instructions = data.split('\n')
               .map(l => l.trim())
               .filter(l => l && l.startsWith('[') && l.endsWith(']'));
             
-            console.log(`📋 ${instructions.length} دستور`);
+            console.log(`📋 ${instructions.length} دستور\n🎥 شروع...`);
             
-            browser = await puppeteer.launch({
+            const browser = await puppeteer.launch({
               headless: false,
               args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
             
-            page = await browser.newPage();
+            const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0', timeout: 15000 });
-            await safeWait(3000);
-            console.log('🌐 ChatGPT آماده');
+            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
             
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log('🌐 صفحه لود شد');
+
             const selectors = [
-              'div[contenteditable]', 'textarea', '[contenteditable="true"]', 
-              '[data-id="root"] textarea', '.ProseMirror', '[role="textbox"]'
+              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
+              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
             ];
 
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
-              console.log(`#${i+1}/${instructions.length}: ${cmd}`);
-              
-              if (!page || page.isClosed?.()) {
-                console.log('⚠️ Page بسته');
-                break;
-              }
-              
-              const start = Date.now();
-              const maxTime = 20000;
+              console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
               
               if (cmd.startsWith('[type ')) {
-                console.log('⌨️ تایپ (20s max)...');
-                const text = cmd.slice(6, -1);
+                console.log('⌨️  جستجو input...');
+                let found = false;
                 
-                try {
-                  await page.waitForSelector(selectors.join(','), { timeout: 3000 });
-                  await page.click(selectors.join(','));
-                  await page.keyboard.type(text, { delay: 25 });
+                for (const selector of selectors) {
+                  try {
+                    await page.waitForSelector(selector, { timeout: 3000 });
+                    const el = await page.$(selector);
+                    const box = await el.boundingBox();
+                    console.log(`✅ ${selector} : (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
+                    
+                    await el.click();
+                    const text = cmd.slice(6, -1);
+                    await page.keyboard.type(text, { delay: 80 });
+                    console.log(`✅ "${text}" تایپ شد`);
+                    found = true;
+                    break;
+                  } catch(e) {}
+                }
+                
+                if (!found) {
+                  console.log('⚠️ input نبود → Enter');
                   await page.keyboard.press('Enter');
-                  console.log(`✅ "${text}"`);
-                } catch {
-                  await page.keyboard.type(text, { delay: 25 });
-                  await page.keyboard.press('Enter');
-                  console.log(`✅ "${text}"`);
                 }
                 
               } else if (cmd.startsWith('[click ')) {
-                console.log('🖱️ کلیک (20s max)...');
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                
-                try {
-                  await page.mouse.click(x, y);
-                  console.log(`✅ کلیک (${x},${y})`);
-                } catch {
-                  console.log('⚠️ کلیک');
-                }
-                
+                console.log(`🖱️ کلیک: (${x}, ${y})`);
+                await page.mouse.click(x, y);
               } else if (cmd.startsWith('[wait ')) {
-                const s = Math.min(parseInt(cmd.slice(6, -1)), 20);
-                console.log(`⏳ ${s}s`);
-                await safeWait(s * 1000);
-              }
-              
-              const elapsed = Date.now() - start;
-              const remaining = Math.max(0, maxTime - elapsed);
-              if (remaining > 0) await safeWait(remaining);
-              
-              const totalTime = Math.round((Date.now() - start) / 1000);
-              if (i === instructions.length - 1) {
-                console.log('🏁 تمام شد!');
-              } else {
-                console.log(`⏱️ ${totalTime}s تمام → #${i+2}`);
+                const s = parseInt(cmd.slice(6, -1));
+                console.log(`⏳ ${s}s...`);
+                await new Promise(resolve => setTimeout(resolve, s * 1000));
               }
             }
             
-          } catch(e) {
-            console.log('❌ خطا:', e.message);
-          } finally {
-            console.log('🔒 بستن...');
-            try { if (page) await page.close(); } catch(e) {}
-            try { if (browser) await browser.close(); } catch(e) {}
-            console.log('✅ OK');
+            console.log('🏁 5 ثانیه دیگه ضبط → تمام!');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            await browser.close();
+            console.log('✅ تمام!');
+          } catch (e) {
+            console.error('❌ خطا:', e.message);
+            process.exit(1);
           }
         })();
         JS_EOF
     
-    - name: Record & Commit to Repo
+    - name: Execute with Xvfb & FFmpeg
       run: |
-        Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
+        Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
-        sleep 3
+        sleep 5
         
-        ffmpeg -loglevel error -f x11grab -draw_mouse 1 \
-          -s 1366x768 -r 30 -i :99 \
-          -t 180 -c:v libx264 -crf 18 -preset medium \
-          -pix_fmt yuv420p screen-record.mp4 &
+        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
+               -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
+               -y ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
-        sleep 2
+        sleep 5
         
-        node record.cjs
+        node record.cjs || true
         
         sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
-        pkill -f Xvfb || true
+        sleep 2
         
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add screen-record.mp4 instructions.txt record.cjs
-        git commit -m "🎥 $(date '+%Y-%m-%d %H:%M') | $(du -h screen-record.mp4 | cut -f1)" || true
-        git push
+        mv *.mp4 record/ 2>/dev/null || true
+        mv instructions.txt record/ 2>/dev/null || true
+        mv record.cjs record/ 2>/dev/null || true
+        mv package*.json record/ 2>/dev/null || true
         
-        ls -la screen-record.mp4
-        du -sh screen-record.mp4
+        ls -la record/ || echo "record خالی"
+        du -sh record/* 2>/dev/null || echo "فایل نیست"
+    
+    - name: Commit record files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add record/ || echo "record خالی"
+        if ! git diff --staged --quiet; then
+          git commit -m "🎥 Add screen recording [skip ci]"
+          git push
+          echo "✅ Push شد!"
+        else
+          echo "هیچ تغییری نیست"
+        fi
+    
+    - uses: actions/upload-artifact@v4
+      with:
+        name: 🎥-recording
+        path: record/
+        retention-days: 7
