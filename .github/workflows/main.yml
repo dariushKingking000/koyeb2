@@ -38,6 +38,9 @@ jobs:
         const fs = require('fs/promises');
 
         (async () => {
+          const TIMEOUT = 20000; // 20s
+          const POLL_INTERVAL = 500; // 0.5s
+          
           try {
             const data = await fs.readFile('./instructions.txt', 'utf8');
             const instructions = data.split('\n')
@@ -48,95 +51,101 @@ jobs:
             
             const browser = await puppeteer.launch({
               headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-web-security']
             });
             
             const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
+            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0', timeout: 30000 });
             
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            await new Promise(r => setTimeout(r, 4000));
             console.log('🌐 صفحه لود شد');
 
             const selectors = [
               'div[contenteditable]', 'textarea', '[contenteditable="true"]', 
-              '[data-id="root"] textarea', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
+              '[data-id="root"] textarea', '.ProseMirror', 'prompt-textarea', 
+              '[role="textbox"]', 'textarea[placeholder*="message"]'
             ];
-
-            const TIMEOUT = 20000; // 20 ثانیه
-            const MAX_WAIT = 5000; // 5 ثانیه نهایی
 
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
               console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
-              
-              const startTime = Date.now();
+              const cmdStart = Date.now();
               
               if (cmd.startsWith('[type ')) {
                 const text = cmd.slice(6, -1);
-                console.log('⌨️ تایپ...');
+                console.log('⌨️ تایپ شروع...');
                 
-                let found = false;
+                let success = false;
                 const typeStart = Date.now();
                 
                 while (Date.now() - typeStart < TIMEOUT) {
-                  for (const selector of selectors) {
-                    try {
-                      await page.waitForSelector(selector, { timeout: 1000 });
-                      await page.click(selector);
-                      await page.keyboard.type(text, { delay: 50 });
-                      await page.keyboard.press('Enter');
-                      console.log(`✅ "${text}" تایپ شد`);
-                      found = true;
-                      break;
-                    } catch(e) {}
+                  try {
+                    // اول input رو پیدا کن
+                    const input = await page.waitForSelector(selectors.join(','), { timeout: 2000 });
+                    await input.click();
+                    await page.keyboard.type(text, { delay: 30 });
+                    await page.keyboard.press('Enter');
+                    console.log(`✅ "${text}" تایپ شد (${(Date.now()-typeStart)/1000}s)`);
+                    success = true;
+                    break;
+                  } catch(e) {
+                    await new Promise(r => setTimeout(r, POLL_INTERVAL));
                   }
-                  if (found) break;
-                  await new Promise(r => setTimeout(r, 500));
                 }
                 
-                if (!found) {
-                  console.log('⚠️ input نبود → مستقیم تایپ');
-                  await page.keyboard.type(text, { delay: 50 });
+                if (!success) {
+                  console.log('⚠️ تایپ timeout → مستقیم');
+                  await page.keyboard.type(text, { delay: 30 });
                   await page.keyboard.press('Enter');
-                  console.log(`✅ "${text}" مستقیم`);
+                  console.log(`✅ "${text}" مستقیم تایپ`);
                 }
                 
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 console.log(`🖱️ کلیک: (${x}, ${y})`);
                 
+                let clickSuccess = false;
                 const clickStart = Date.now();
+                
                 while (Date.now() - clickStart < TIMEOUT) {
                   try {
                     await page.mouse.click(x, y);
-                    console.log(`✅ کلیک شد`);
+                    console.log(`✅ کلیک (${x},${y}) (${(Date.now()-clickStart)/1000}s)`);
+                    clickSuccess = true;
                     break;
                   } catch(e) {
-                    await new Promise(r => setTimeout(r, 500));
+                    await new Promise(r => setTimeout(r, POLL_INTERVAL));
                   }
+                }
+                
+                if (!clickSuccess) {
+                  console.log('⚠️ کلیک timeout → رد شد');
                 }
                 
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ ${s}s...`);
-                await new Promise(resolve => setTimeout(resolve, s * 1000));
+                console.log(`⏳ ${s}s انتظار...`);
+                await new Promise(r => setTimeout(r, s * 1000));
               }
               
-              // اگر 20 ثانیه طول کشید → برو بعدی
-              if (Date.now() - startTime > TIMEOUT) {
-                console.log('⏰ 20s timeout → بعدی!');
-                continue;
+              // 20s timeout check
+              if (Date.now() - cmdStart > TIMEOUT) {
+                console.log('⏰ 20s تمام → بعدی!');
               }
+              
+              // 1s break بین دستورها
+              await new Promise(r => setTimeout(r, 1000));
             }
             
-            console.log('🏁 5 ثانیه نهایی...');
-            await new Promise(resolve => setTimeout(resolve, MAX_WAIT));
+            console.log('🏁 5s نهایی...');
+            await new Promise(r => setTimeout(r, 5000));
             await browser.close();
-            console.log('✅ تمام!');
+            console.log('✅ تمام شد!');
+            
           } catch (e) {
             console.error('❌ خطا:', e.message);
-            process.exit(1);
+            await browser?.close();
           }
         })();
         JS_EOF
@@ -144,29 +153,26 @@ jobs:
     - name: Execute with Xvfb & FFmpeg
       run: |
         Xvfb :99 -screen 0 1366x768x24 -ac +extension GLX +render -noreset &>/dev/null &
-        XVFB_PID=$!
         export DISPLAY=:99
         sleep 3
         
-        ffmpeg -nostdin -loglevel error -f x11grab -show_region 0 -draw_mouse 0 \
-               -s 1366x768 -r 30 -i :99.0 -t 120 -c:v libx264 -pix_fmt yuv420p \
-               -crf 23 -preset ultrafast -y ./record/demo_full.mp4 &>/dev/null &
+        ffmpeg -nostdin -loglevel error -f x11grab -draw_mouse 1 \
+               -s 1366x768 -r 30 -i :99.0 -t 180 -c:v libx264 -pix_fmt yuv420p \
+               -crf 23 -preset fast -y demo.mp4 &
         
         FFMPEG_PID=$!
         sleep 2
         
-        node record.cjs || true
+        timeout 150s node record.cjs || true
         
-        echo "🛑 Kill..."
-        kill -9 $FFMPEG_PID $XVFB_PID 2>/dev/null || true
+        kill -9 $FFMPEG_PID 2>/dev/null || true
         pkill -9 -f ffmpeg || true
-        pkill -9 -f x11grab || true
         pkill -9 -f Xvfb || true
-        sleep 2
+        sleep 3
         
         mkdir -p record
         cp instructions.txt record/ 2>/dev/null || true
-        mv *.mp4 record/ 2>/dev/null || true
+        mv demo.mp4 record/demo_full.mp4 2>/dev/null || true
         mv record.cjs record/ 2>/dev/null || true
         mv package*.json record/ 2>/dev/null || true
         
