@@ -58,15 +58,9 @@ jobs:
             await new Promise(resolve => setTimeout(resolve, 5000));
             console.log('🌐 صفحه لود شد');
 
-            // همه selector های ChatGPT
             const selectors = [
-              'textarea',
-              '[contenteditable="true"]',
-              '[data-id="root"] textarea',
-              'div[contenteditable]',
-              '.ProseMirror',
-              'prompt-textarea',
-              '[role="textbox"]'
+              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
+              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
             ];
 
             for (let i = 0; i < instructions.length; i++) {
@@ -90,9 +84,7 @@ jobs:
                     console.log(`✅ "${text}" تایپ شد`);
                     found = true;
                     break;
-                  } catch(e) {
-                    // console.log(`⏭️ ${selector}`);
-                  }
+                  } catch(e) {}
                 }
                 
                 if (!found) {
@@ -109,13 +101,11 @@ jobs:
                 console.log(`⏳ ${s}s...`);
                 await new Promise(resolve => setTimeout(resolve, s * 1000));
               }
-              
-              if (i === instructions.length - 1) {
-                console.log('🏁 10s final...');
-                await new Promise(resolve => setTimeout(resolve, 10000));
-              }
             }
             
+            // ✅ بعد آخرین دستور: دقیقاً 5 ثانیه صبر + close
+            console.log('🏁 5 ثانیه دیگه ضبط → تمام!');
+            await new Promise(resolve => setTimeout(resolve, 5000));
             await browser.close();
             console.log('✅ تمام!');
           } catch (e) {
@@ -140,7 +130,7 @@ jobs:
         
         node record.cjs
         
-        sleep 5
+        sleep 2
         kill $FFMPEG_PID 2>/dev/null || true
         
         # همه فایل‌ها به record
