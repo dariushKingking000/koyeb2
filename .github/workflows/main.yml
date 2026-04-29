@@ -76,7 +76,6 @@ jobs:
                 console.log('⌨️ تایپ...');
                 
                 try {
-                  // تلاش 1: selector پیدا کن
                   const input = await page.waitForSelector(selectors.join(','), { timeout: 3000 });
                   await input.click();
                   await page.keyboard.type(text, { delay: 40 });
@@ -84,12 +83,11 @@ jobs:
                   console.log(`✅ "${text}" selector OK`);
                 } catch(e1) {
                   try {
-                    // تلاش 2: مستقیم تایپ (کوتاه)
                     await page.keyboard.type(text.slice(0, 40), { delay: 40 });
                     await page.keyboard.press('Enter');
                     console.log(`✅ "${text}" مستقیم OK`);
                   } catch(e2) {
-                    console.log('⚠️ تایپ رد شد');
+                    console.log('⚠️ تایپ رد');
                   }
                 }
                 
@@ -109,7 +107,6 @@ jobs:
                 await new Promise(r => setTimeout(r, s * 1000));
               }
               
-              // 1 ثانیه استراحت
               await new Promise(r => setTimeout(r, 1000));
             }
             
@@ -127,18 +124,18 @@ jobs:
         })();
         JS_EOF
     
-    - name: Record Screen
+    - name: Record & Save to Repo
       run: |
-        # Xvfb راه اندازی
+        # Xvfb
         Xvfb :99 -screen 0 1366x768x24 > /dev/null 2>&1 &
         export DISPLAY=:99
         sleep 3
         
-        # FFmpeg ضبط (بهترین کیفیت)
+        # ضبط
         ffmpeg -loglevel error -f x11grab -draw_mouse 1 \
           -s 1366x768 -r 30 -i :99 \
           -t 180 -c:v libx264 -crf 18 -preset medium \
-          -pix_fmt yuv420p demo.mp4 &
+          -pix_fmt yuv420p screen-record.mp4 &
         
         FFMPEG_PID=$!
         sleep 2
@@ -146,23 +143,19 @@ jobs:
         # اجرا
         node record.cjs
         
-        # Kill همه
+        # Kill
         sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
         pkill -f Xvfb || true
         
-        # فایل‌ها رو مرتب کن
-        mkdir -p output
-        mv demo.mp4 output/
-        cp instructions.txt output/ 2>/dev/null || true
-        cp record.cjs output/
+        # Commit به repo
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        git add screen-record.mp4 instructions.txt record.cjs
+        git commit -m "🎥 Screen Record: $(date '+%Y-%m-%d %H:%M') | $(ls -la screen-record.mp4 | awk '{print $5/1024 "KB"}')"
+        git push
         
-        echo "📁 فایل‌ها:"
-        ls -la output/
-        du -sh output/*
-    
-    - name: Show final result
-      run: |
-        echo "🎥 ویدیو آماده در output/demo.mp4"
-        echo "📋 دستورات در output/instructions.txt"
+        echo "✅ فایل در repo: screen-record.mp4"
+        ls -la screen-record.mp4
+        du -sh screen-record.mp4
