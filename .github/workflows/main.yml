@@ -36,48 +36,33 @@ jobs:
         cat > record.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs/promises');
-
         (async () => {
           try {
             const data = await fs.readFile('./instructions.txt', 'utf8');
-            const instructions = data.split('\n')
-              .map(l => l.trim())
-              .filter(l => l && l.startsWith('[') && l.endsWith(']'));
-            
+            const instructions = data.split('\n').map(l => l.trim()).filter(l => l && l.startsWith('[') && l.endsWith(']'));
             console.log(`📋 ${instructions.length} دستور\n🎥 شروع...`);
-            
             const browser = await puppeteer.launch({
               headless: false,
               args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
-            
             const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            
             await new Promise(resolve => setTimeout(resolve, 5000));
             console.log('🌐 صفحه لود شد');
-
-            const selectors = [
-              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
-            ];
-
+            const selectors = ['textarea', '[contenteditable="true"]', '[data-id="root"] textarea', 'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'];
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
               console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
-              
               if (cmd.startsWith('[type ')) {
                 console.log('⌨️  جستجو input...');
                 let found = false;
-                
                 for (const selector of selectors) {
                   try {
                     await page.waitForSelector(selector, { timeout: 3000 });
                     const el = await page.$(selector);
                     const box = await el.boundingBox();
                     console.log(`✅ ${selector} : (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
-                    
                     await el.click();
                     const text = cmd.slice(6, -1);
                     await page.keyboard.type(text, { delay: 80 });
@@ -86,12 +71,10 @@ jobs:
                     break;
                   } catch(e) {}
                 }
-                
                 if (!found) {
                   console.log('⚠️ input نبود → Enter');
                   await page.keyboard.press('Enter');
                 }
-                
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 console.log(`🖱️ کلیک: (${x}, ${y})`);
@@ -102,7 +85,6 @@ jobs:
                 await new Promise(resolve => setTimeout(resolve, s * 1000));
               }
             }
-            
             console.log('🏁 5 ثانیه دیگه ضبط → تمام!');
             await new Promise(resolve => setTimeout(resolve, 5000));
             await browser.close();
@@ -114,47 +96,26 @@ jobs:
         })();
 JS_EOF
     
-    - name: Create instructions.txt
-      run: |
-        cat > instructions.txt << 'TXT_EOF'
-        [type چطوری؟]
-        [wait 2]
-        [click 134 432]
-        [type سلام! خوبم]
-        [wait 3]
-        [click 200 300]
-        [type شاهکار بود]
-        [wait 5]
-TXT_EOF
-    
     - name: Execute with Xvfb & FFmpeg
       run: |
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
         sleep 5
-        
-        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-          -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
-          -y ./record/demo_full.mp4 &
-        
+        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 -y ./record/demo_full.mp4 &
         FFMPEG_PID=$!
         sleep 5
-        
         node record.cjs
-        
         sleep 3
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
         sleep 2
-        
-        mv instructions.txt record/ 2>/dev/null || true
-        mv record.cjs record/ 2>/dev/null || true
-        mv package*.json record/ 2>/dev/null || true
-        
+        cp instructions.txt record/ 2>/dev/null || true
+        cp record.cjs record/ 2>/dev/null || true
+        cp package*.json record/ 2>/dev/null || true
         ls -la record/
         du -sh record/*
     
     - uses: actions/upload-artifact@v4
       with:
-        name: 🎥-complete
+        name: complete-record
         path: record/
