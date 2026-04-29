@@ -14,16 +14,17 @@ jobs:
     - name: Install deps
       run: |
         sudo apt update -y
-        sudo apt install -y xvfb ffmpeg
+        sudo apt install -y xvfb ffmpeg xkbdata
         npm init -y
         npm install puppeteer
+        echo '{"type": "commonjs"}' > package.json
     - name: Setup
       run: mkdir -p record
     - name: Create instructions.txt
       run: echo "" > instructions.txt
     - name: Create record.js
       run: |
-        cat > record.js << 'JS_EOF'
+        cat > record.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
         const { spawn } = require('child_process');
         const fs = require('fs/promises');
@@ -86,9 +87,9 @@ jobs:
     - name: Execute
       run: |
         export DISPLAY=:99
-        Xvfb :99 -screen 0 1366x768x24 &
-        sleep 3
-        node record.js
+        Xvfb :99 -screen 0 1366x768x24 -kb &
+        sleep 5
+        node record.cjs
     - uses: actions/upload-artifact@v4
       with:
         path: |
