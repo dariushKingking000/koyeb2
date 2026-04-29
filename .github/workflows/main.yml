@@ -25,35 +25,27 @@ jobs:
         rm -rf node_modules package*.json
         npm init -y
         npm install puppeteer@latest
-        echo '{"type": "commonjs"}' >> package.json
-    
-    - name: Create record folder & instructions
-      run: |
-        mkdir -p record
-        cat > record/instructions.txt << 'TXT_EOF'
-        [wait 3]
-        [type چطوری؟]
-        [wait 2]
-        [click 134 432]
-        [type سلام! خوبم]
-        [wait 3]
-        [click 200 300]
-        [type شاهکار بود]
-        [wait 5]
-        TXT_EOF
+        echo '{"type": "commonjs"}' > package.json
     
     - name: Create record.cjs
       run: |
         cat > record/record.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
-        const fs = require('fs/promises');
 
         (async () => {
           try {
-            const data = await fs.readFile('./record/instructions.txt', 'utf8');
-            const instructions = data.split('\n')
-              .map(l => l.trim())
-              .filter(l => l && l.startsWith('[') && l.endsWith(']'));
+            // دستورات مستقیم
+            const instructions = [
+              '[wait 3]',
+              '[type چطوری؟]',
+              '[wait 2]',
+              '[click 134 432]',
+              '[type سلام! خوبم]',
+              '[wait 3]',
+              '[click 200 300]',
+              '[type شاهکار بود]',
+              '[wait 5]'
+            ];
             
             console.log(`📋 ${instructions.length} instructions loaded`);
             console.log(`🎬 Starting recording...`);
