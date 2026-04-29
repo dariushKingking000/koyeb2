@@ -1,6 +1,6 @@
-- name: Create record.cjs (FIXED - NO SYNTAX ERROR)
-      run: |
-        cat > record.cjs << 'EOF'
+- name: Create record.cjs (✅ FIXED)
+  run: |
+    cat > record.cjs << 'EOF'
 const puppeteer = require('puppeteer');
 const fs = require('fs/promises');
 
@@ -13,7 +13,7 @@ const fs = require('fs/promises');
     
     const browser = await puppeteer.launch({
       headless: false,
-      args: ['--no-sandbox', '--disable-dev-shm-usage']
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
     
     const page = await browser.newPage();
@@ -44,23 +44,26 @@ const fs = require('fs/promises');
           } catch(e) {}
         }
         if (!found) {
-          console.log('⚠️ input پیدا نشد - Enter');
+          console.log('⚠️ Input not found - Pressing Enter');
           await page.keyboard.press('Enter');
         }
       } else if (cmd.startsWith('[click ')) {
         const coords = cmd.slice(7, -1).split(' ').map(Number);
         await page.mouse.click(coords[0], coords[1]);
+        console.log('🖱️ Clicked: (' + coords[0] + ', ' + coords[1] + ')');
       } else if (cmd.startsWith('[wait ')) {
         const secs = parseInt(cmd.slice(6, -1));
         await new Promise(r => setTimeout(r, secs * 1000));
+        console.log('⏳ Waited ' + secs + 's');
       }
     }
     
     await new Promise(r => setTimeout(r, 10000));
     await browser.close();
-    console.log('✅ تمام!');
+    console.log('✅ تمام شد!');
   } catch (e) {
-    console.error('❌ خطا: ' + e.message);
+    console.error('❌ Error: ' + e.message);
+    process.exit(1);
   }
 })();
 EOF
