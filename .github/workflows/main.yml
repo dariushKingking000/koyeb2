@@ -58,43 +58,66 @@ jobs:
             await new Promise(resolve => setTimeout(resolve, 5000));
             console.log('🌐 صفحه لود شد');
 
+            // همه selector های ChatGPT
+            const selectors = [
+              'textarea',
+              '[contenteditable="true"]',
+              '[data-id="root"] textarea',
+              'div[contenteditable]',
+              '.ProseMirror',
+              'prompt-textarea',
+              '[role="textbox"]'
+            ];
+
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
               console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
               
               if (cmd.startsWith('[type ')) {
-                console.log('⌨️  کجا تایپ کنم؟');
-                try {
-                  await page.waitForSelector('textarea, [contenteditable="true"]', { timeout: 10000 });
-                  const el = await page.$('textarea, [contenteditable="true"]');
-                  const box = await el.boundingBox();
-                  console.log(`✅ textarea پیدا شد در: (${Math.round(box.x)}, ${Math.round(box.y)}) اندازه: ${Math.round(box.width)}x${Math.round(box.height)}`);
-                  
-                  await page.click('textarea, [contenteditable="true"]');
-                  const text = cmd.slice(6, -1);
-                  await page.keyboard.type(text, { delay: 80 });
-                  console.log(`✅ "${text}" تایپ شد`);
-                } catch(e) {
-                  console.log(`⚠️ textarea پیدا نشد!`);
+                console.log('⌨️  جستجو input...');
+                let found = false;
+                
+                for (const selector of selectors) {
+                  try {
+                    await page.waitForSelector(selector, { timeout: 3000 });
+                    const el = await page.$(selector);
+                    const box = await el.boundingBox();
+                    console.log(`✅ ${selector} : (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
+                    
+                    await el.click();
+                    const text = cmd.slice(6, -1);
+                    await page.keyboard.type(text, { delay: 80 });
+                    console.log(`✅ "${text}" تایپ شد`);
+                    found = true;
+                    break;
+                  } catch(e) {
+                    // console.log(`⏭️ ${selector}`);
+                  }
                 }
+                
+                if (!found) {
+                  console.log('⚠️ input نبود → Enter');
+                  await page.keyboard.press('Enter');
+                }
+                
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                console.log(`🖱️ کلیک در: (${x}, ${y})`);
+                console.log(`🖱️ کلیک: (${x}, ${y})`);
                 await page.mouse.click(x, y);
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ صبر ${s} ثانیه...`);
+                console.log(`⏳ ${s}s...`);
                 await new Promise(resolve => setTimeout(resolve, s * 1000));
               }
               
               if (i === instructions.length - 1) {
-                console.log('🏁 آخرین دستور تمام! 10 ثانیه دیگه ضبط...');
+                console.log('🏁 10s final...');
                 await new Promise(resolve => setTimeout(resolve, 10000));
               }
             }
             
             await browser.close();
-            console.log('🎉 تمام!');
+            console.log('✅ تمام!');
           } catch (e) {
             console.error('❌ خطا:', e.message);
             process.exit(1);
@@ -120,11 +143,11 @@ jobs:
         sleep 5
         kill $FFMPEG_PID 2>/dev/null || true
         
-        # همه فایل‌ها رو به record منتقل کن
+        # همه فایل‌ها به record
         mv *.mp4 record/ 2>/dev/null || true
         mv instructions.txt record/ 2>/dev/null || true
         mv record.cjs record/ 2>/dev/null || true
-        mv package.json package-lock.json record/ 2>/dev/null || true
+        mv package*.json record/ 2>/dev/null || true
         
         ls -la record/
     
