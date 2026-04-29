@@ -15,12 +15,22 @@ jobs:
         sudo apt update -y
         sudo apt install -y xvfb ffmpeg -y
         
+    - name: Setup Node & Puppeteer
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+      run: |
+        npm init -y
+        npm install puppeteer fs.promises@latest
+        echo '{"type": "commonjs"}' > package.json
+    
     - name: Setup
       run: mkdir -p record
     
-    - name: Create record.js
+    - name: Create record.cjs
       run: |
-        cat > record.js << 'JS_EOF'
+        cat > record.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs/promises');
 
@@ -31,17 +41,17 @@ jobs:
               .map(l => l.trim())
               .filter(l => l && l.startsWith('[') && l.endsWith(']'));
             
-            console.log(`📋 ${instructions.length} دستور\n🎥 ضبط...`);
+            console.log(`📋 ${instructions.length} دستور\n🎥 شروع...`);
             
             const browser = await puppeteer.launch({
               headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--display=:99']
             });
             
             const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(3000);
 
             for (let i = 0; i < instructions.length; i++) {
               const cmd = instructions[i];
@@ -65,7 +75,7 @@ jobs:
             
             await page.waitForTimeout(5000);
             await browser.close();
-            console.log('🎉 اسکریپت اجرا شد!');
+            console.log('🎉 اسکریپت تمام شد!');
           } catch (e) {
             console.error('❌ خطا:', e.message);
             process.exit(1);
@@ -76,26 +86,27 @@ jobs:
     - name: Execute with Xvfb & FFmpeg
       run: |
         # Start Xvfb
-        Xvfb :99 -screen 0 1366x768x24 &
+        Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
-        sleep 3
+        sleep 5
         
         # Start FFmpeg recording
         ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-               -t 300 -c:v libx264 -pix_fmt yuv420p \
-               ./record/demo_full.mp4 &
+               -t 300 -c:v libx264 -pix_fmt yuv420p -crf 23 \
+               -y ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
-        sleep 2
+        sleep 3
         
-        # Run puppeteer script
-        node record.js
+        # Run puppeteer
+        node record.cjs
         
-        # Stop FFmpeg
-        kill $FFMPEG_PID
-        sleep 2
+        # Stop recording
+        sleep 3
+        kill $FFMPEG_PID 2>/dev/null || true
         
-        mv demo_full.mp4 record/
+        # Ensure video exists
+        ls -la record/
     
     - uses: actions/upload-artifact@v4
       with:
