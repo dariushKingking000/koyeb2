@@ -55,12 +55,12 @@ jobs:
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
             
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise(resolve => setTimeout(resolve, 4000));
             console.log('🌐 صفحه لود شد');
 
             const selectors = [
-              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
+              'div[contenteditable]', 'textarea', '[contenteditable="true"]', 
+              '[data-id="root"] textarea', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
             ];
 
             for (let i = 0; i < instructions.length; i++) {
@@ -68,34 +68,37 @@ jobs:
               console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
               
               if (cmd.startsWith('[type ')) {
-                console.log('⌨️  جستجو input...');
-                let found = false;
+                const text = cmd.slice(6, -1);
+                console.log('⌨️ تایپ...');
                 
+                let found = false;
                 for (const selector of selectors) {
                   try {
-                    await page.waitForSelector(selector, { timeout: 3000 });
-                    const el = await page.$(selector);
-                    const box = await el.boundingBox();
-                    console.log(`✅ ${selector} : (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
-                    
-                    await el.click();
-                    const text = cmd.slice(6, -1);
-                    await page.keyboard.type(text, { delay: 80 });
+                    await page.waitForSelector(selector, { timeout: 2000 });
+                    await page.click(selector);
+                    await page.keyboard.type(text, { delay: 50 }); // سرعت معمولی
+                    await page.keyboard.press('Enter');
                     console.log(`✅ "${text}" تایپ شد`);
                     found = true;
                     break;
-                  } catch(e) {}
+                  } catch(e) {
+                    console.log(`⏭️ ${selector} نبود`);
+                  }
                 }
                 
+                // **حتی اگر پیدا نکرد هم تایپ کن**
                 if (!found) {
-                  console.log('⚠️ input نبود → Enter');
+                  console.log('⚠️ input نبود → مستقیم تایپ');
+                  await page.keyboard.type(text, { delay: 50 });
                   await page.keyboard.press('Enter');
+                  console.log(`✅ "${text}" مستقیم`);
                 }
                 
               } else if (cmd.startsWith('[click ')) {
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 console.log(`🖱️ کلیک: (${x}, ${y})`);
-                await page.mouse.click(x, y);
+                // **همیشه کلیک کن - خطا نده**
+                await page.mouse.click(x, y).catch(() => console.log('⚠️ کلیک skip'));
               } else if (cmd.startsWith('[wait ')) {
                 const s = parseInt(cmd.slice(6, -1));
                 console.log(`⏳ ${s}s...`);
@@ -103,10 +106,10 @@ jobs:
               }
             }
             
-            console.log('🏁 5 ثانیه انتظار بعد از آخرین دستور...');
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log('🏁 4 ثانیه نهایی...');
+            await new Promise(resolve => setTimeout(resolve, 4000));
             await browser.close();
-            console.log('✅ تمام! (ffmpeg kill میشه)');
+            console.log('✅ تمام!');
           } catch (e) {
             console.error('❌ خطا:', e.message);
             process.exit(1);
@@ -116,27 +119,28 @@ jobs:
     
     - name: Execute with Xvfb & FFmpeg
       run: |
-        Xvfb :99 -screen 0 1366x768x24 -ac &
+        Xvfb :99 -screen 0 1366x768x24 -ac +extension GLX +render -noreset &
+        XVFB_PID=$!
         export DISPLAY=:99
         sleep 5
         
-        # FFmpeg با timeout دقیق
-        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-               -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
-               -y ./record/demo_full.mp4 &
+        ffmpeg -nostdin -loglevel error -f x11grab -show_region 0 -draw_mouse 0 \
+               -s 1366x768 -r 30 -i :99.0 -t 120 -c:v libx264 -pix_fmt yuv420p \
+               -crf 23 -preset ultrafast -y ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
-        sleep 5
+        sleep 3
         
         node record.cjs
         
-        # **دقیقاً بعد از تمام شدن اسکریپت** - 5 ثانیه صبر کرده
-        sleep 1
-        kill $FFMPEG_PID 2>/dev/null || true
-        pkill -f ffmpeg || true
-        sleep 1
+        echo "🛑 Kill..."
+        kill -9 $FFMPEG_PID $XVFB_PID 2>/dev/null || true
+        pkill -9 -f ffmpeg || true
+        pkill -9 -f x11grab || true
+        pkill -9 -f Xvfb || true
+        sleep 2
         
-        # همه فایل‌ها به record
+        mkdir -p record
         cp instructions.txt record/ 2>/dev/null || true
         mv *.mp4 record/ 2>/dev/null || true
         mv record.cjs record/ 2>/dev/null || true
