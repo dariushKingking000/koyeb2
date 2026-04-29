@@ -1,4 +1,4 @@
-name: Screen Record Bot
+name: 🎥 Screen Record Bot
 on: [workflow_dispatch]
 jobs:
   record:
@@ -6,28 +6,78 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup Node.js
+    - name: 🟢 Node.js
       uses: actions/setup-node@v4
       with:
         node-version: 20
-        cache: 'npm'
         
-    - name: Install Dependencies
+    - name: 🔧 Install
       run: |
-        sudo apt update
+        sudo apt update -y
         sudo apt install -y xvfb ffmpeg
-        npm install
+        npm init -y
+        npm install puppeteer
         
-    - name: Create Directories
+    - name: 📁 Setup
       run: mkdir -p record user_data
       
-    - name: Run Recorder
-      run: node record.js
-      
-    - name: Upload Results
+    - name: 🎬 record.js
+      run: |
+        cat > record.js << 'EOF'
+import puppeteer from 'puppeteer';
+import { spawn } from 'child_process';
+import fs from 'fs/promises';
+
+(async () => {
+  const instructions = await fs.readFile('./instructions.txt','utf8')
+    .then(c=>c.split('\n').map(l=>l.trim()).filter(l=>l&&l.startsWith('[')&&l.endsWith(']')))
+    .catch(()=> {console.log('❌ instructions.txt'); process.exit(1);});
+  console.log(`📋 ${instructions.length} دستور\n🎥 ضبط...\n`);
+
+  spawn('Xvfb', [':99', '-screen', '0', '1366x768x24']);
+  spawn('ffmpeg', ['-f','x11grab','-s','1366x768','-r','25','-i',':99+0,0','-t','120','-c:v','libx264','./record/demo_full.mp4']);
+
+  const browser = await puppeteer.launch({headless:false,args:['--display=:99','--no-sandbox']});
+  const page = await browser.newPage();
+  await page.setViewport({width:1366,height:768});
+  await page.goto('https://chatgpt.com',{waitUntil:'networkidle0'});
+  await page.waitForTimeout(2000);
+
+  for(let i=0;i<instructions.length;i++){
+    const cmd=instructions[i];
+    console.log(`🔄 #${i+1}/${instructions.length}: ${cmd}`);
+    if(cmd.startsWith('[type ')){
+      const text=cmd.slice(6,-1);
+      await page.click('textarea');
+      await page.keyboard.type(text,{delay:80});
+      console.log(`✅ "${text}"\n`);
+    }else if(cmd.startsWith('[click ')){
+      const [x,y]=cmd.slice(7,-1).split(' ').map(Number);
+      await page.mouse.click(x,y);
+      console.log(`🖱️ (${x},${y})\n`);
+    }else if(cmd.startsWith('[wait ')){
+      const s=parseInt(cmd.slice(6,-1));
+      await page.waitForTimeout(s*1000);
+      console.log(`⏳ ${s}s\n`);
+    }
+  }
+  await page.waitForTimeout(5000);
+  await browser.close();
+  console.log('🎉 demo_full.mp4 آماده!');
+})();
+EOF
+        
+    - name: 🎥 Execute
+      run: |
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1366x768x24 &
+        sleep 2
+        node record.js
+        
+    - name: 📤 Upload
       uses: actions/upload-artifact@v4
       with:
-        name: screen-record
+        name: 🎥-complete
         path: |
-          ./record/*
-          ./instructions.txt
+          ./record/**
+          instructions.txt
