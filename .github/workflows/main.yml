@@ -36,15 +36,7 @@ jobs:
           try {
             // دستورات مستقیم
             const instructions = [
-              '[wait 3]',
-              '[type چطوری؟]',
-              '[wait 2]',
-              '[click 134 432]',
-              '[type سلام! خوبم]',
-              '[wait 3]',
-              '[click 200 300]',
-              '[type شاهکار بود]',
-              '[wait 5]'
+              '[click 200 300]'
             ];
             
             console.log(`📋 ${instructions.length} instructions loaded`);
