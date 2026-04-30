@@ -1,146 +1,50 @@
-name: 📸 Screen Capture Bot
-on: 
-  push:
-    branches: [main]
-  workflow_dispatch:
-
+name: Screenshot
+on: [push]
 permissions:
   contents: write
 
 jobs:
-  capture:
+  screenshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install deps
-      run: |
-        sudo apt update -y
-        sudo apt install -y xvfb ffmpeg
-        
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
+    - uses: browser-actions/setup-chrome@v1
     
-    - name: Install packages
+    - name: Screenshot
       run: |
-        mkdir -p screenshots
-        rm -rf node_modules package*.json
         npm init -y
-        npm install puppeteer@latest
-        echo '{"type": "commonjs"}' > package.json
-    
-    - name: Create capture.cjs
-      run: |
-        cat > capture.cjs << 'JS_EOF'
+        npm i puppeteer
+        cat > screenshot.js << 'EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         
+        // JSON config بساز/بروزرسانی
+        const config = {
+          url: 'https://app.n8n.cloud/register',
+          width: 1920,
+          height: 1080,
+          timestamp: new Date().toISOString()
+        };
+        fs.writeFileSync('config.json', JSON.stringify(config, null, 2));
+        
         (async () => {
-          try {
-            const instructions = [
-              '[click 200 300]'
-            ];
-            
-            const browser = await puppeteer.launch({
-              headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-            });
-            const page = await browser.newPage();
-            await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await new Promise(r=>setTimeout(r,3000));
-
-            const selectors = [
-              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
-            ];
-
-            let frame = 0;
-            
-            // Screenshot اولیه
-            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`📸 Frame ${frame}: Initial`);
-            frame++;
-
-            for(let i=0; i<instructions.length; i++){
-              const cmd = instructions[i];
-              console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
-              
-              if(cmd.startsWith('[type ')){
-                let found = false;
-                for(const selector of selectors){
-                  try{
-                    await page.waitForSelector(selector, {timeout: 5000});
-                    const el = await page.$(selector);
-                    await el.click({force: true});
-                    const text = cmd.slice(6, -1);
-                    await page.keyboard.type(text, {delay: 100});
-                    console.log(`✅ Typed: "${text}"`);
-                    found = true;
-                    break;
-                  }catch(e){}
-                }
-                if(!found) await page.keyboard.press('Enter');
-              }else if(cmd.startsWith('[click ')){
-                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                await page.mouse.click(x, y);
-              }else if(cmd.startsWith('[wait ')){
-                const s = parseInt(cmd.slice(6, -1));
-                await new Promise(r=>setTimeout(r, s*1000));
-              }
-              
-              // Screenshot بعد هر دستور
-              await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-              console.log(`📸 Frame ${frame}: After ${cmd}`);
-              frame++;
-            }
-            
-            await new Promise(r=>setTimeout(r, 3000));
-            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`📸 Frame ${frame}: Final`);
-            
-            await browser.close();
-            console.log(`✅ ${frame+1} screenshots!`);
-          }catch(e){
-            console.error('❌ Error:', e.message);
-          }
+          const browser = await puppeteer.launch({headless: true, args: ['--no-sandbox']});
+          const page = await browser.newPage();
+          await page.setViewport({width: config.width, height: config.height});
+          await page.goto(config.url, {waitUntil: 'networkidle2', timeout: 15000});
+          await page.screenshot({path: 'screenshot.png', fullPage: true});
+          await browser.close();
+          console.log('✅ Screenshot & config.json saved!');
         })();
-        JS_EOF
+        EOF
+        node screenshot.js
     
-    - name: Capture Screenshots
+    - name: Commit
       run: |
-        rm -rf screenshots/*.png
-        Xvfb :99 -screen 0 1366x768x24 -ac &
-        export DISPLAY=:99
-        sleep 3
-        node capture.cjs
-        pkill Xvfb || true
-        ls -la screenshots/
-        echo "📸 Count: $(ls screenshots/*.png 2>/dev/null | wc -l)"
-    
-    - name: Create ZIP
-      run: |
-        zip -r screenshots.zip screenshots/
-    
-    - name: Upload ZIP Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: 📸-ChatGPT-Screenshots
-        path: |
-          screenshots.zip
-          screenshots/
-        retention-days: 30
-    
-    - name: Commit & Push
-      run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-        git add screenshots/*.png screenshots.zip || true
-        if git diff --staged --quiet; then
-          echo "✅ Ready in artifacts"
-        else
-          git commit -m "📸 Screenshots [skip ci]"
-          git push
-        fi
+        git config user.name "github-actions"
+        git config user.email "actions@github.com"
+        git add screenshot.png config.json
+        git commit -m "📸 Screenshot + config.json [skip ci]" || exit 0
+        git push || exit 0
