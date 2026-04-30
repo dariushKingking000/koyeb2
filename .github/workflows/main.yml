@@ -4,6 +4,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write  # ✅ Git push permission
+
 jobs:
   record:
     runs-on: ubuntu-latest
@@ -31,124 +34,110 @@ jobs:
       run: |
         cat > record/record.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
-
         (async () => {
           try {
-            // دستورات مستقیم
             const instructions = [
-              '[click 200 300]'
+              '[wait 3]',
+              '[type چطوری؟]',
+              '[wait 2]',
+              '[click 134 432]',
+              '[type سلام! خوبم]',
+              '[wait 3]',
+              '[click 200 300]',
+              '[type شاهکار بود]',
+              '[wait 5]'
             ];
-            
             console.log(`📋 ${instructions.length} instructions loaded`);
-            console.log(`🎬 Starting recording...`);
             
             const browser = await puppeteer.launch({
               headless: false,
               args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
             });
-            
             const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            console.log('🌐 ChatGPT loaded successfully');
+            await new Promise(r=>setTimeout(r,5000));
+            console.log('🌐 ChatGPT loaded');
 
-            const selectors = [
-              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
-            ];
+            const selectors = ['textarea','[contenteditable="true"]','[data-id="root"] textarea','div[contenteditable]','.ProseMirror','prompt-textarea','[role="textbox"]'];
 
-            for (let i = 0; i < instructions.length; i++) {
+            for(let i=0; i<instructions.length; i++){
               const cmd = instructions[i];
-              console.log(`🔄 #${i + 1}/${instructions.length}: ${cmd}`);
+              console.log(`🔄 ${i+1}/9: ${cmd}`);
               
-              if (cmd.startsWith('[type ')) {
-                console.log('🔍 Searching for input...');
-                let found = false;
-                
-                for (const selector of selectors) {
-                  try {
-                    await page.waitForSelector(selector, { timeout: 3000 });
-                    const el = await page.$(selector);
-                    const box = await el.boundingBox();
-                    console.log(`✅ ${selector}: (${Math.round(box.x)}, ${Math.round(box.y)}) ${Math.round(box.width)}x${Math.round(box.height)}`);
-                    
+              if(cmd.startsWith('[type ')){
+                let found=false;
+                for(const selector of selectors){
+                  try{
+                    await page.waitForSelector(selector,{timeout:3000});
+                    const el=await page.$(selector);
                     await el.click();
-                    const text = cmd.slice(6, -1);
-                    await page.keyboard.type(text, { delay: 80 });
-                    console.log(`✅ "${text}" typed successfully`);
-                    found = true;
+                    const text=cmd.slice(6,-1);
+                    await page.keyboard.type(text,{delay:80});
+                    console.log(`✅ Typed: "${text}"`);
+                    found=true;
                     break;
-                  } catch(e) {}
+                  }catch(e){}
                 }
-                
-                if (!found) {
-                  console.log('⚠️ Input not found → Enter');
-                  await page.keyboard.press('Enter');
-                }
-                
-              } else if (cmd.startsWith('[click ')) {
-                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                console.log(`🖱️ Clicking: (${x}, ${y})`);
-                await page.mouse.click(x, y);
-              } else if (cmd.startsWith('[wait ')) {
-                const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ Waiting ${s}s...`);
-                await new Promise(resolve => setTimeout(resolve, s * 1000));
+                if(!found) await page.keyboard.press('Enter');
+              }else if(cmd.startsWith('[click ')){
+                const [x,y]=cmd.slice(7,-1).split(' ').map(Number);
+                await page.mouse.click(x,y);
+                console.log(`🖱️ Clicked (${x},${y})`);
+              }else if(cmd.startsWith('[wait ')){
+                const s=parseInt(cmd.slice(6,-1));
+                await new Promise(r=>setTimeout(r,s*1000));
+                console.log(`⏳ Waited ${s}s`);
               }
             }
             
-            console.log('⏳ Waiting 5s before close → Saving video!');
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            console.log('🎬 Closing...');
+            await new Promise(r=>setTimeout(r,5000));
             await browser.close();
             console.log('✅ Complete!');
-          } catch (e) {
-            console.error('❌ Error:', e.message);
+          }catch(e){
+            console.error('❌',e.message);
             process.exit(1);
           }
         })();
         JS_EOF
     
-    - name: Execute with Xvfb & FFmpeg
+    - name: Record Screen
       run: |
         rm -f record/*.mp4
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
-        sleep 5
+        sleep 3
         
-        timeout 120s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
-               -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 \
-               -y ./record/demo_full.mp4 &
+        timeout 180s ffmpeg -f x11grab -s 1366x768 -r 25 -i :99.0 \
+          -t 180 -c:v libx264 -pix_fmt y4m10le -crf 23 -preset fast \
+          ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
-        sleep 5
-        
-        node record/record.cjs || true
-        
         sleep 3
+        node record/record.cjs
+        sleep 8
         kill $FFMPEG_PID 2>/dev/null || true
         pkill -f ffmpeg || true
-        sleep 2
         
-        ls -la record/ || echo "No record folder"
-        du -sh record/* 2>/dev/null || echo "No files found"
+        ls -la record/
+        du -sh record/*
     
-    - name: Commit record files
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: 🎥-Screen-Recording
+        path: record/
+        retention-days: 30
+    
+    - name: Commit Results
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add record/ || echo "No record folder"
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        git add record/ || true
         if ! git diff --staged --quiet; then
-          git commit -m "🎥 Add screen recording [skip ci]"
-          git push
-          echo "✅ Pushed successfully!"
+          git commit -m "🎥 Update screen recording [skip ci]"
+          git push || echo "Push failed - check repo settings"
         else
           echo "No changes to commit"
         fi
-    
-    - uses: actions/upload-artifact@v4
-      with:
-        name: 🎥-recording
-        path: record/
-        retention-days: 7
