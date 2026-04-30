@@ -41,8 +41,11 @@ jobs:
           try {
             const instructions = [
               '[click 564 264]',
-              '[type json]',
-              '[wait 5]'
+              '[type kingkingplm00@gmail.com]',
+              '[wait 5]',
+              '[click 625 327]',
+              '[wait 4]',
+              '[clcik 100 100]'
             ];
             
             const browser = await puppeteer.launch({
