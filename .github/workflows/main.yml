@@ -104,26 +104,32 @@ jobs:
     
     - name: Record Screen
       run: |
-        rm -f record/*.mp4
+        rm -rf record
+        mkdir -p record
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
         sleep 5
         
-        # ✅ FFmpeg با pix_fmt درست
         timeout 240s ffmpeg -f x11grab -s 1366x768 -r 30 -i :99.0 \
-          -t 240 -c:v libx264 -pix_fmt yuv420p -crf 23 -preset fast \
-          -movflags +faststart ./record/demo_full.mp4 &
+          -t 240 -c:v libx264 -pix_fmt yuv420p -crf 23 -preset ultrafast \
+          -movflags +faststart -f mp4 ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
         sleep 5
         node record/record.cjs
         sleep 10
         kill $FFMPEG_PID 2>/dev/null || true
-        pkill -f ffmpeg || true || true
-        sleep 3
+        pkill -f ffmpeg || true
+        sleep 5
         
-        ls -la record/ || echo "No files"
-        du -sh record/* 2>/dev/null || echo "Empty"
+        if [ -f ./record/demo_full.mp4 ]; then
+          ffmpeg -y -i ./record/demo_full.mp4 -c copy -movflags +faststart ./record/demo_fixed.mp4
+          mv ./record/demo_fixed.mp4 ./record/demo_full.mp4
+          echo "✅ MP4 repaired and ready!"
+        fi
+        
+        ls -la record/
+        du -sh record/*.mp4
     
     - name: Upload Video Artifact
       uses: actions/upload-artifact@v4
