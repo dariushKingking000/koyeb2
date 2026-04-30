@@ -42,10 +42,11 @@ jobs:
             const instructions = [
               '[click 564 264]',
               '[type tcgkkppc@guerrillamailblock.com]',
-              '[wait 5]'
-              '[click 640 330]'
-              '[wait 10]'
+              '[wait 5]',
+              '[click 640 330]',
+              '[wait 10]',
               '[click 200 200]'
+              
             ];
             
             const browser = await puppeteer.launch({
