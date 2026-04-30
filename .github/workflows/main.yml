@@ -41,7 +41,7 @@ jobs:
           try {
             const instructions = [
               '[click 564 264]',
-              '[type kingkingplm00@gmail.com]',
+              '[type jehxbskcyb@chmail.ir]',
               '[wait 5]',
               '[click 625 327]',
               '[wait 4]',
