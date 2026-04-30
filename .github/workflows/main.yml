@@ -1,182 +1,44 @@
-name: 📸 Screen Capture Bot
-on: 
+name: 🟢 Fixed Temp Email
+on:
   push:
-    branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  capture:
+  persistent-email:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install deps
+    - name: 📧 ایمیل ثابت (با SID ذخیره شده)
+      id: email
+      env:
+        SID: ${{ secrets.GUERRILLA_SID }}
       run: |
-        sudo apt update -y
-        sudo apt install -y xvfb ffmpeg
-        
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
-    
-    - name: Install packages
-      run: |
-        mkdir -p screenshots
-        rm -rf node_modules package*.json
-        npm init -y
-        npm install puppeteer@latest
-        echo '{"type": "commonjs"}' > package.json
-    
-    - name: Create capture.cjs
-      run: |
-        cat > capture.cjs << 'JS_EOF'
-        const puppeteer = require('puppeteer');
-        const fs = require('fs');
-        
-        (async () => {
-          try {
-            const instructions = [
-              '[click 564 264]',
-              '[type jehxbskcyb@chmail.ir]',
-              '[wait 5]',
-              '[click 625 327]',
-              '[wait 4]',
-              '[clcik 100 100]'
-            ];
-            
-            const browser = await puppeteer.launch({
-              headless: false,
-              args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-            });
-            const page = await browser.newPage();
-            await page.setViewport({ width: 1366, height: 768 });
-            await page.goto('https://app.n8n.cloud/register', { waitUntil: 'networkidle0' });
-            await new Promise(r=>setTimeout(r,3000));
-
-            const selectors = [
-              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]',
-              'input[type="text"]', 'input[type="email"]', '#email', '#username'
-            ];
-
-            let frame = 0;
-            
-            // Screenshot اولیه - بالاترین فریم
-            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`📸 Frame ${frame}: Initial load`);
-            frame++;
-
-            for(let i=0; i<instructions.length; i++){
-              const cmd = instructions[i];
-              console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
-              
-              // Screenshot قبل از هر دستور - فریم‌های متوالی
-              await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-              console.log(`📸 Frame ${frame}: Before ${cmd}`);
-              frame++;
-              
-              // اجرای دستور
-              if(cmd.startsWith('[type ')){
-                let found = false;
-                console.log('🔍 Searching for input field...');
-                
-                // تلاش بیشتر برای پیدا کردن input
-                for(const selector of selectors){
-                  try{
-                    await page.waitForSelector(selector, {timeout: 3000});
-                    const el = await page.$(selector);
-                    if(el){
-                      await el.click({force: true});
-                      await page.waitForTimeout(500); // کمی صبر
-                      const text = cmd.slice(6, -1);
-                      await page.keyboard.type(text, {delay: 150}); // کندتر
-                      console.log(`✅ SUCCESS: Typed "${text}" in ${selector}`);
-                      found = true;
-                      break;
-                    }
-                  }catch(e){
-                    console.log(`⏭️ Skipped ${selector}`);
-                  }
-                }
-                
-                if(!found){
-                  console.log('⚠️ Input not found, typing anyway...');
-                  const text = cmd.slice(6, -1);
-                  await page.keyboard.type(text, {delay: 150});
-                }
-                
-              }else if(cmd.startsWith('[click ')){
-                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-                await page.mouse.click(x, y);
-                console.log(`🖱️ Clicked at (${x}, ${y})`);
-                
-              }else if(cmd.startsWith('[wait ')){
-                const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ Waiting ${s}s...`);
-                await new Promise(r=>setTimeout(r, s*1000));
-              }
-              
-              // Screenshot بعد هر دستور - فریم‌های متوالی
-              await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-              console.log(`📸 Frame ${frame}: After ${cmd}`);
-              frame++;
-            }
-            
-            // Screenshot نهایی
-            await new Promise(r=>setTimeout(r, 3000));
-            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`📸 Frame ${frame}: Final result`);
-            frame++;
-            
-            await browser.close();
-            console.log(`✅ Total: ${frame} frames captured!`);
-            console.log(`📁 Check screenshots/frame_0000.png → frame_${(frame-1).toString().padStart(4,'0')}.png`);
-          }catch(e){
-            console.error('❌ Error:', e.message);
-            process.exit(1);
-          }
-        })();
-        JS_EOF
-    
-    - name: Capture Screenshots
-      run: |
-        rm -rf screenshots/*.png
-        Xvfb :99 -screen 0 1366x768x24 -ac &
-        export DISPLAY=:99
-        sleep 3
-        node capture.cjs
-        pkill Xvfb || true
-        echo "📊 Frames captured:"
-        ls -la screenshots/ | head -20
-        echo "📸 Total: $(ls screenshots/*.png 2>/dev/null | wc -l)"
-    
-    - name: Create ZIP
-      run: |
-        zip -r screenshots.zip screenshots/
-    
-    - name: Upload ZIP Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: 📸-n8n-register-screenshots
-        path: |
-          screenshots.zip
-          screenshots/
-        retention-days: 30
-    
-    - name: Commit & Push
-      run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-        git add screenshots/*.png screenshots.zip || true
-        if git diff --staged --quiet; then
-          echo "✅ Screenshots ready in Artifacts!"
-        else
-          git commit -m "📸 $(ls screenshots/*.png 2>/dev/null | wc -l | xargs) frames [skip ci]"
-          git push
+        if [ -z "$SID" ]; then
+          echo "❌ Secret GUERRILLA_SID ست نشده!"
+          exit 1
         fi
+        
+        # دریافت ایمیل با SID ثابت
+        RESPONSE=$(curl -s -H "User-Agent: Mozilla/5.0" \
+          "https://api.guerrillamail.com/ajax.php?f=get_email_address&sid_token=$SID")
+        
+        EMAIL=$(echo "$RESPONSE" | grep -o '"email_addr":"[^"]*' | cut -d'"' -f4)
+        
+        echo "email=$EMAIL" >> $GITHUB_OUTPUT
+        echo "::notice:: ✅ ایمیل ثابت: $EMAIL"
 
+    - name: 📥 نمایش inbox
+      env:
+        SID: ${{ secrets.GUERRILLA_SID }}
+      run: |
+        # چک ایمیل‌های جدید
+        curl -s "https://api.guerrillamail.com/ajax.php?f=check_email&sid_token=$SID" | \
+        grep -o '"count":[0-9]*' || echo "📭 خالی"
+        
+        # جزئیات ایمیل‌ها
+        curl -s "https://api.guerrillamail.com/ajax.php?f=fetch_email&sid_token=$SID"
+
+    - name: 🎉 تمام
+      run: |
+        echo "✅ ایمیل دائمی: ${{ steps.email.outputs.email }}"
+        echo "🔄 هر بار همین ایمیل میاد!"
 
