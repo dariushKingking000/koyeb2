@@ -40,7 +40,8 @@ jobs:
         (async () => {
           try {
             const instructions = [
-              '[type json]'
+              '[click 564 264]',
+              '[type json]
             ];
             
             const browser = await puppeteer.launch({
@@ -144,4 +145,5 @@ jobs:
           git commit -m "📸 Screenshots [skip ci]"
           git push
         fi
+
 
