@@ -23,19 +23,31 @@ jobs:
       with:
         node-version: 20
     
-    - name: Install packages & Create record.cjs
+    - name: Install packages
       run: |
         mkdir -p record
         rm -rf node_modules package*.json
         npm init -y
         npm install puppeteer@latest
         echo '{"type": "commonjs"}' > package.json
-        
+    
+    - name: Create record.cjs
+      run: |
         cat > record/record.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
         (async () => {
           try {
-            const instructions = ['[click 200 300]'];
+            const instructions = [
+              '[wait 3]',
+              '[type چطوری؟]',
+              '[wait 2]',
+              '[click 134 432]',
+              '[type سلام! خوبم]',
+              '[wait 3]',
+              '[click 200 300]',
+              '[type شاهکار بود]',
+              '[wait 5]'
+            ];
             console.log(`📋 ${instructions.length} instructions loaded`);
             
             const browser = await puppeteer.launch({
@@ -47,8 +59,48 @@ jobs:
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
             await new Promise(r=>setTimeout(r,5000));
             console.log('🌐 ChatGPT loaded');
+
+            const selectors = [
+              'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
+              'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
+            ];
+
+            for(let i=0; i<instructions.length; i++){
+              const cmd = instructions[i];
+              console.log(`🔄 ${i+1}/9: ${cmd}`);
+              
+              if(cmd.startsWith('[type ')){
+                let found = false;
+                for(const selector of selectors){
+                  try{
+                    await page.waitForSelector(selector, {timeout: 5000});
+                    const el = await page.$(selector);
+                    await el.click({force: true});
+                    const text = cmd.slice(6, -1);
+                    await page.keyboard.type(text, {delay: 100});
+                    console.log(`✅ Typed: "${text}"`);
+                    found = true;
+                    break;
+                  }catch(e){
+                    console.log(`❌ Selector failed: ${selector}`);
+                  }
+                }
+                if(!found){
+                  console.log('⚠️ No input found, pressing Enter');
+                  await page.keyboard.press('Enter');
+                }
+              }else if(cmd.startsWith('[click ')){
+                const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
+                await page.mouse.click(x, y);
+                console.log(`🖱️ Clicked (${x}, ${y})`);
+              }else if(cmd.startsWith('[wait ')){
+                const s = parseInt(cmd.slice(6, -1));
+                await new Promise(r=>setTimeout(r, s*1000));
+                console.log(`⏳ Waited ${s}s`);
+              }
+            }
             
-            console.log('🎬 Final wait...');
+            console.log('🎬 Final wait & close...');
             await new Promise(r=>setTimeout(r, 8000));
             await browser.close();
             console.log('✅ Automation Complete!');
@@ -60,13 +112,13 @@ jobs:
     
     - name: Record Screen
       run: |
-        rm -rf record/*.mp4
+        rm -f record/*.mp4
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
         sleep 5
         
         timeout 240s ffmpeg -f x11grab -s 1366x768 -r 30 -i :99.0 \
-          -t 60 -c:v libx264 -pix_fmt yuv420p -crf 23 -preset ultrafast \
+          -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 -preset ultrafast \
           -movflags +faststart -f mp4 ./record/demo_full.mp4 &
         
         FFMPEG_PID=$!
@@ -77,10 +129,11 @@ jobs:
         pkill -f ffmpeg || true
         sleep 5
         
-        # تعمیر MP4
+        # ✅ تعمیر MP4
         if [ -f ./record/demo_full.mp4 ]; then
           ffmpeg -y -i ./record/demo_full.mp4 -c copy -movflags +faststart ./record/demo_fixed.mp4
           mv ./record/demo_fixed.mp4 ./record/demo_full.mp4
+          echo "✅ MP4 repaired!"
         fi
         
         ls -la record/
@@ -97,10 +150,11 @@ jobs:
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        git add record/*.mp4 || echo "No video"
+        git add record/*.mp4 || echo "No video to commit"
         if git diff --staged --quiet; then
-          echo "✅ Video in artifacts"
+          echo "✅ No changes - video ready in artifacts"
         else
-          git commit -m "🎥 ChatGPT demo [skip ci]"
+          git commit -m "🎥 Add ChatGPT demo video [skip ci]"
           git push
+          echo "✅ Video pushed to repo!"
         fi
