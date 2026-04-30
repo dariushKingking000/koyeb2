@@ -1,4 +1,4 @@
-name: 🎥 Screen Record Bot
+name: 📸 Screen Capture Bot
 on: 
   push:
     branches: [main]
@@ -8,16 +8,11 @@ permissions:
   contents: write
 
 jobs:
-  record:
+  capture:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install deps
-      run: |
-        sudo apt update -y
-        sudo apt install -y xvfb ffmpeg
-        
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
@@ -25,22 +20,23 @@ jobs:
     
     - name: Install packages
       run: |
-        mkdir -p record
+        mkdir -p screenshots
         rm -rf node_modules package*.json
         npm init -y
         npm install puppeteer@latest
         echo '{"type": "commonjs"}' > package.json
     
-    - name: Create record.cjs
+    - name: Create capture.cjs
       run: |
-        cat > record/record.cjs << 'JS_EOF'
+        cat > capture.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
+        const fs = require('fs');
+        
         (async () => {
           try {
             const instructions = [
-              '[click 200 400]'
+              '[click 200 300]'
             ];
-            console.log(`📋 ${instructions.length} instructions loaded`);
             
             const browser = await puppeteer.launch({
               headless: false,
@@ -49,7 +45,7 @@ jobs:
             const page = await browser.newPage();
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
-            await new Promise(r=>setTimeout(r,5000));
+            await new Promise(r=>setTimeout(r,3000));
             console.log('🌐 ChatGPT loaded');
 
             const selectors = [
@@ -57,9 +53,16 @@ jobs:
               'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]'
             ];
 
+            let frame = 0;
+            
+            // Screenshot اولیه
+            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+            console.log(`📸 Frame ${frame}: Initial page`);
+            frame++;
+
             for(let i=0; i<instructions.length; i++){
               const cmd = instructions[i];
-              console.log(`🔄 ${i+1}/9: ${cmd}`);
+              console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
               
               if(cmd.startsWith('[type ')){
                 let found = false;
@@ -78,7 +81,6 @@ jobs:
                   }
                 }
                 if(!found){
-                  console.log('⚠️ No input found, pressing Enter');
                   await page.keyboard.press('Enter');
                 }
               }else if(cmd.startsWith('[click ')){
@@ -90,63 +92,55 @@ jobs:
                 await new Promise(r=>setTimeout(r, s*1000));
                 console.log(`⏳ Waited ${s}s`);
               }
+              
+              // Screenshot بعد هر دستور
+              await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+              console.log(`📸 Frame ${frame}: After ${cmd}`);
+              frame++;
             }
             
-            console.log('🎬 Final wait & close...');
-            await new Promise(r=>setTimeout(r, 8000));
+            // Screenshot نهایی
+            await new Promise(r=>setTimeout(r, 3000));
+            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+            console.log(`📸 Frame ${frame}: Final`);
+            
             await browser.close();
-            console.log('✅ Automation Complete!');
+            console.log(`✅ ${frame+1} screenshots captured!`);
           }catch(e){
             console.error('❌ Error:', e.message);
           }
         })();
         JS_EOF
     
-    - name: Record Screen
+    - name: Capture Screenshots
       run: |
-        rm -f record/*.mp4
-        Xvfb :99 -screen 0 1366x768x24 -ac &
-        export DISPLAY=:99
-        sleep 5
-        
-        timeout 240s ffmpeg -f x11grab -s 1366x768 -r 30 -i :99.0 \
-          -t 120 -c:v libx264 -pix_fmt yuv420p -crf 23 -preset ultrafast \
-          -movflags +faststart -f mp4 ./record/demo_full.mp4 &
-        
-        FFMPEG_PID=$!
-        sleep 5
-        node record/record.cjs
-        sleep 10
-        kill $FFMPEG_PID 2>/dev/null || true
-        pkill -f ffmpeg || true
-        sleep 5
-        
-        # ✅ تعمیر MP4
-        if [ -f ./record/demo_full.mp4 ]; then
-          ffmpeg -y -i ./record/demo_full.mp4 -c copy -movflags +faststart ./record/demo_fixed.mp4
-          mv ./record/demo_fixed.mp4 ./record/demo_full.mp4
-          echo "✅ MP4 repaired!"
-        fi
-        
-        ls -la record/
-        du -sh record/*.mp4
+        rm -rf screenshots/*.png
+        node capture.cjs
+        ls -la screenshots/
+        echo "📸 Screenshot count: $(ls screenshots/*.png 2>/dev/null | wc -l)"
     
-    - name: Upload Video Artifact
+    - name: Create ZIP
+      run: |
+        zip -r screenshots.zip screenshots/
+        ls -la *.zip screenshots/
+    
+    - name: Upload ZIP Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: 🎥-ChatGPT-Demo
-        path: record/
+        name: 📸-ChatGPT-Screenshots
+        path: |
+          screenshots.zip
+          screenshots/
         retention-days: 30
     
-    - name: Commit & Push Video
+    - name: Commit & Push
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        git add record/*.mp4 || echo "No video to commit"
+        git add screenshots/*.png screenshots.zip || echo "No files"
         if git diff --staged --quiet; then
-          echo "✅ No changes - video ready in artifacts"
+          echo "✅ Files ready in artifacts"
         else
-          git commit -m "🎥 Add ChatGPT demo video [skip ci]"
+          git commit -m "📸 Add ChatGPT screenshots [skip ci]"
           git push
-          echo "✅ Video pushed to repo!"
         fi
