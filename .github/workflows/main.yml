@@ -13,6 +13,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install deps
+      run: |
+        sudo apt update -y
+        sudo apt install -y xvfb ffmpeg
+        
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
@@ -35,7 +40,15 @@ jobs:
         (async () => {
           try {
             const instructions = [
-              '[click 200 300]'
+              '[wait 3]',
+              '[type چطوری؟]',
+              '[wait 2]',
+              '[click 134 432]',
+              '[type سلام! خوبم]',
+              '[wait 3]',
+              '[click 200 300]',
+              '[type شاهکار بود]',
+              '[wait 5]'
             ];
             
             const browser = await puppeteer.launch({
@@ -46,7 +59,6 @@ jobs:
             await page.setViewport({ width: 1366, height: 768 });
             await page.goto('https://chatgpt.com', { waitUntil: 'networkidle0' });
             await new Promise(r=>setTimeout(r,3000));
-            console.log('🌐 ChatGPT loaded');
 
             const selectors = [
               'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
@@ -57,7 +69,7 @@ jobs:
             
             // Screenshot اولیه
             await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`📸 Frame ${frame}: Initial page`);
+            console.log(`📸 Frame ${frame}: Initial`);
             frame++;
 
             for(let i=0; i<instructions.length; i++){
@@ -76,21 +88,15 @@ jobs:
                     console.log(`✅ Typed: "${text}"`);
                     found = true;
                     break;
-                  }catch(e){
-                    console.log(`❌ Selector failed: ${selector}`);
-                  }
+                  }catch(e){}
                 }
-                if(!found){
-                  await page.keyboard.press('Enter');
-                }
+                if(!found) await page.keyboard.press('Enter');
               }else if(cmd.startsWith('[click ')){
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 await page.mouse.click(x, y);
-                console.log(`🖱️ Clicked (${x}, ${y})`);
               }else if(cmd.startsWith('[wait ')){
                 const s = parseInt(cmd.slice(6, -1));
                 await new Promise(r=>setTimeout(r, s*1000));
-                console.log(`⏳ Waited ${s}s`);
               }
               
               // Screenshot بعد هر دستور
@@ -99,13 +105,12 @@ jobs:
               frame++;
             }
             
-            // Screenshot نهایی
             await new Promise(r=>setTimeout(r, 3000));
             await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
             console.log(`📸 Frame ${frame}: Final`);
             
             await browser.close();
-            console.log(`✅ ${frame+1} screenshots captured!`);
+            console.log(`✅ ${frame+1} screenshots!`);
           }catch(e){
             console.error('❌ Error:', e.message);
           }
@@ -115,14 +120,17 @@ jobs:
     - name: Capture Screenshots
       run: |
         rm -rf screenshots/*.png
+        Xvfb :99 -screen 0 1366x768x24 -ac &
+        export DISPLAY=:99
+        sleep 3
         node capture.cjs
+        pkill Xvfb || true
         ls -la screenshots/
-        echo "📸 Screenshot count: $(ls screenshots/*.png 2>/dev/null | wc -l)"
+        echo "📸 Count: $(ls screenshots/*.png 2>/dev/null | wc -l)"
     
     - name: Create ZIP
       run: |
         zip -r screenshots.zip screenshots/
-        ls -la *.zip screenshots/
     
     - name: Upload ZIP Artifact
       uses: actions/upload-artifact@v4
@@ -137,10 +145,10 @@ jobs:
       run: |
         git config --global user.name "GitHub Action"
         git config --global user.email "action@github.com"
-        git add screenshots/*.png screenshots.zip || echo "No files"
+        git add screenshots/*.png screenshots.zip || true
         if git diff --staged --quiet; then
-          echo "✅ Files ready in artifacts"
+          echo "✅ Ready in artifacts"
         else
-          git commit -m "📸 Add ChatGPT screenshots [skip ci]"
+          git commit -m "📸 Screenshots [skip ci]"
           git push
         fi
