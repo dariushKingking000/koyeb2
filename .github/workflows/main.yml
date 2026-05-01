@@ -35,11 +35,23 @@ jobs:
         const fs = require('fs');
         const { execSync } = require('child_process');
         
-        async function takeMultipleScreenshots(page, prefix, count) {
-          for(let i = 0; i < count; i++) {
-            await page.screenshot({ path: `${prefix}_${i.toString().padStart(2,'0')}.png` });
-            if(i < count-1) await new Promise(r => setTimeout(r, 500));
+        async function continuousCapture(page, prefix, durationMs = 5000) {
+          mkdirSync('screenshots', { recursive: true });
+          const startTime = Date.now();
+          let frameNum = 0;
+          
+          while(Date.now() - startTime < durationMs) {
+            await page.screenshot({ 
+              path: `screenshots/${prefix}_frame_${frameNum.toString().padStart(3,'0')}.png`, 
+              fullPage: false 
+            });
+            frameNum++;
+            await new Promise(r => setTimeout(r, 1000)); // 1 ثانیه 1 frame
           }
+        }
+        
+        function mkdirSync(dir, opts) {
+          try { fs.mkdirSync(dir, opts); } catch(e) {}
         }
         
         (async () => {
@@ -51,39 +63,35 @@ jobs:
           await page.setViewport({ width: 1366, height: 768 });
           await page.goto('https://app.n8n.cloud/register', { waitUntil: 'networkidle0' });
           
-          let frameCount = 0;
+          let actionCount = 0;
           
           const instructions = [
-            {type: 'screenshot', count: 10, name: 'start_page'},
-            {type: 'click', x: 564, y: 264, name: 'click_email'},
-            {type: 'screenshot', count: 10, name: 'email_field_focused'},
-            {type: 'type', text: 'kingking@gmail.com', name: 'typing_email'},
-            {type: 'screenshot', count: 10, name: 'email_typed'},
-            {type: 'click', x: 640, y: 330, name: 'click_password'},
-            {type: 'screenshot', count: 10, name: 'password_field_focused'},
-            {type: 'wait', secs: 10, name: 'waiting_otp'},
-            {type: 'screenshot', count: 10, name: 'before_otp'},
-            {type: 'type', text: 'pass.txt', name: 'typing_pass'},
-            {type: 'screenshot', count: 10, name: 'password_typed'},
-            {type: 'click', x: 583, y: 492, name: 'submit'},
-            {type: 'screenshot', count: 20, name: 'final_result'}
+            '[click 564 264]',
+            '[type kingking@gmail.com]',
+            '[click 640 330]',
+            '[wait 10]',
+            '[type pass.txt]',
+            '[click 583 492]'
           ];
           
-          for(let instr of instructions) {
-            console.log(`🔄 ${instr.name}`);
+          // شروع با 5 ثانیه capture
+          await continuousCapture(page, `frame_${actionCount}_initial_load`);
+          actionCount++;
+          
+          for(let cmd of instructions) {
+            console.log(`🔄 ${actionCount}: ${cmd}`);
             
-            if(instr.type === 'screenshot') {
-              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, instr.count);
-              frameCount++;
+            // 5 ثانیه قبل از هر action
+            await continuousCapture(page, `frame_${actionCount}_before_${cmd.replace(/[\[\] ]/g,'_')}`);
+            
+            // اجرای action
+            if(cmd.startsWith('[click ')) {
+              const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
+              await page.mouse.click(x, y);
               
-            } else if(instr.type === 'click') {
-              await page.mouse.click(instr.x, instr.y);
-              await new Promise(r => setTimeout(r, 1000));
-              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, 10);
-              frameCount++;
-              
-            } else if(instr.type === 'type') {
-              if(instr.text === 'pass.txt') {
+            } else if(cmd.startsWith('[type ')) {
+              const text = cmd.slice(6, -1).trim();
+              if(text === 'pass.txt') {
                 console.log('🔍 منتظر OTP از B...');
                 let otp = '';
                 let attempts = 0;
@@ -106,23 +114,28 @@ jobs:
                   await page.keyboard.type(char, {delay: 300});
                 }
               } else {
-                for(let char of instr.text) {
+                for(let char of text) {
                   await page.keyboard.type(char, {delay: 150});
                 }
               }
-              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, 10);
-              frameCount++;
               
-            } else if(instr.type === 'wait') {
-              await new Promise(r => setTimeout(r, instr.secs * 1000));
-              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, 10);
-              frameCount++;
+            } else if(cmd.startsWith('[wait ')) {
+              const secs = parseInt(cmd.slice(6, -1));
+              await new Promise(r => setTimeout(r, secs * 1000));
             }
+            
+            // 5 ثانیه بعد هر action
+            await continuousCapture(page, `frame_${actionCount}_after_${cmd.replace(/[\[\] ]/g,'_')}`);
+            actionCount++;
           }
           
+          // 5 ثانیه آخر
+          await continuousCapture(page, `frame_${actionCount}_final_result`);
+          
           await browser.close();
-          console.log(`✅ تمام! ${frameCount} سری frame (حدود 150+ عکس)`);
+          console.log(`✅ تمام! ${actionCount + 1} سری 5s capture (حدود 30+ frame هر سری)`);
         })();
+
         EOF
     
     - name: Run Capture
@@ -139,13 +152,14 @@ jobs:
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         ls -la screenshots/ | tail -20
+        echo "📊 Total frames: $(ls screenshots/*.png 2>/dev/null | wc -l)"
         
         git add screenshots/*.png || true
         
         if git diff --staged --quiet; then
           echo "هیچ فایلی برای کامیت نیست"
         else
-          git commit -m "📸 Added screenshots $(ls screenshots/ | wc -l) files $(date)"
+          git commit -m "📸 Added $(ls screenshots/ | wc -l) screenshots $(date)"
           git push
           echo "✅ اسکرین‌شات‌ها در repo آپلود شد"
         fi
