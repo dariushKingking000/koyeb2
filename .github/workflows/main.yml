@@ -35,6 +35,13 @@ jobs:
         const fs = require('fs');
         const { execSync } = require('child_process');
         
+        async function takeMultipleScreenshots(page, prefix, count) {
+          for(let i = 0; i < count; i++) {
+            await page.screenshot({ path: `${prefix}_${i.toString().padStart(2,'0')}.png` });
+            if(i < count-1) await new Promise(r => setTimeout(r, 500));
+          }
+        }
+        
         (async () => {
           const browser = await puppeteer.launch({
             headless: false,
@@ -44,69 +51,77 @@ jobs:
           await page.setViewport({ width: 1366, height: 768 });
           await page.goto('https://app.n8n.cloud/register', { waitUntil: 'networkidle0' });
           
+          let frameCount = 0;
+          
           const instructions = [
-            '[click 564 264]',
-            '[type kingking@gmail.com]',
-            '[wait 5]',
-            '[click 640 330]',
-            '[wait 10]',
-            '[type pass.txt]',
-            '[click 583 492]'
+            {type: 'screenshot', count: 10, name: 'start_page'},
+            {type: 'click', x: 564, y: 264, name: 'click_email'},
+            {type: 'screenshot', count: 10, name: 'email_field_focused'},
+            {type: 'type', text: 'kingking@gmail.com', name: 'typing_email'},
+            {type: 'screenshot', count: 10, name: 'email_typed'},
+            {type: 'click', x: 640, y: 330, name: 'click_password'},
+            {type: 'screenshot', count: 10, name: 'password_field_focused'},
+            {type: 'wait', secs: 10, name: 'waiting_otp'},
+            {type: 'screenshot', count: 10, name: 'before_otp'},
+            {type: 'type', text: 'pass.txt', name: 'typing_pass'},
+            {type: 'screenshot', count: 10, name: 'password_typed'},
+            {type: 'click', x: 583, y: 492, name: 'submit'},
+            {type: 'screenshot', count: 20, name: 'final_result'}
           ];
           
-          let frame = 0;
-          
-          for(let i = 0; i < instructions.length; i++) {
-            const cmd = instructions[i];
-            console.log(`🔄 ${cmd}`);
+          for(let instr of instructions) {
+            console.log(`🔄 ${instr.name}`);
             
-            await page.screenshot({ path: `frame_${frame++}.png` });
-            
-            if(cmd.startsWith('[type pass.txt]')) {
-              console.log('🔍 منتظر OTP از B...');
-              let otp = '';
-              let attempts = 0;
+            if(instr.type === 'screenshot') {
+              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, instr.count);
+              frameCount++;
               
-              while(attempts < 30) {
-                try {
-                  execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
-                  if(fs.existsSync('numbers.txt')) {
-                    otp = fs.readFileSync('numbers.txt', 'utf8').trim();
-                    console.log(`📄 B فرستاد: "${otp}" (${otp.length} chars)`);
-                    
-                    if(otp.length === 6 && /^\d{6}$/.test(otp)) {
-                      console.log(`✅ OTP OK: ${otp}`);
-                      break;
-                    }
-                  }
-                } catch(e) {}
+            } else if(instr.type === 'click') {
+              await page.mouse.click(instr.x, instr.y);
+              await new Promise(r => setTimeout(r, 1000));
+              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, 10);
+              frameCount++;
+              
+            } else if(instr.type === 'type') {
+              if(instr.text === 'pass.txt') {
+                console.log('🔍 منتظر OTP از B...');
+                let otp = '';
+                let attempts = 0;
                 
-                attempts++;
-                console.log(`⏳ منتظر B... (${attempts}/30)`);
-                await new Promise(r => setTimeout(r, 30000));
+                while(attempts < 30) {
+                  try {
+                    execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
+                    if(fs.existsSync('numbers.txt')) {
+                      otp = fs.readFileSync('numbers.txt', 'utf8').trim();
+                      if(otp.length === 6 && /^\d{6}$/.test(otp)) break;
+                    }
+                  } catch(e) {}
+                  attempts++;
+                  await new Promise(r => setTimeout(r, 30000));
+                }
+                
+                if(!otp) throw new Error('❌ B OTP نفرستاد!');
+                
+                for(let char of otp) {
+                  await page.keyboard.type(char, {delay: 300});
+                }
+              } else {
+                for(let char of instr.text) {
+                  await page.keyboard.type(char, {delay: 150});
+                }
               }
+              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, 10);
+              frameCount++;
               
-              if(!otp) throw new Error('❌ B OTP نفرستاد!');
-              
-              await page.keyboard.type(otp, {delay: 200});
-              console.log(`✅ OTP تایپ شد: ${otp}`);
-              
-            } else if(cmd.startsWith('[type ')) {
-              const text = cmd.slice(6, -1);
-              await page.keyboard.type(text, {delay: 150});
-            } else if(cmd.startsWith('[click ')) {
-              const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-              await page.mouse.click(x, y);
-            } else if(cmd.startsWith('[wait ')) {
-              const secs = parseInt(cmd.slice(6, -1));
-              await new Promise(r => setTimeout(r, secs * 1000));
+            } else if(instr.type === 'wait') {
+              await new Promise(r => setTimeout(r, instr.secs * 1000));
+              await takeMultipleScreenshots(page, `frame_${frameCount.toString().padStart(3,'0')}_${instr.name}`, 10);
+              frameCount++;
             }
-            
-            await page.screenshot({ path: `frame_${frame++}.png` });
           }
           
           await browser.close();
-          console.log('✅ تمام!');
+          console.log(`✅ تمام! ${frameCount} سری frame (حدود 150+ عکس)`);
         })();
         EOF
     
@@ -123,16 +138,16 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        ls -la screenshots/ | tail -20
         
         git add screenshots/*.png || true
-        git add *.png || true
         
         if git diff --staged --quiet; then
           echo "هیچ فایلی برای کامیت نیست"
         else
-          git commit -m "📸 Added screenshots $(date '+%Y-%m-%d %H:%M:%S')"
+          git commit -m "📸 Added screenshots $(ls screenshots/ | wc -l) files $(date)"
           git push
-          echo "✅ اسکرین‌شات‌ها در repo اصلی آپلود شد"
+          echo "✅ اسکرین‌شات‌ها در repo آپلود شد"
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
