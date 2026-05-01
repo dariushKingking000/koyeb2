@@ -1,17 +1,18 @@
-name: Clean Screenshots History
-on: [workflow_dispatch]
+name: Clean Screenshots
+on: workflow_dispatch  # فقط دستی ران کن
 jobs:
   clean:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4 --depth=1
+    - uses: actions/checkout@v4
     
-    - name: Remove screenshots from Git
+    - name: Force delete screenshots
       run: |
+        rm -rf screenshots/
         git config user.name "Clean Bot"
         git config user.email "bot@github.com"
-        git rm -r --cached screenshots/ 2>/dev/null || true
-        git commit -m "🧹 Remove screenshots history [skip ci]" || true
-        git push --force
+        git add .
+        git commit -m "🧹 Clean screenshots" || exit 0
+        git push
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
