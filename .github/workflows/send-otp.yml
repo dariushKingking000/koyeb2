@@ -1,0 +1,30 @@
+name: 🔑 B - OTP بفرست
+on:
+  workflow_dispatch:
+    inputs:
+      otp:
+        description: 'OTP 6 رقمی'
+        required: true
+        default: '123456'
+
+permissions:
+  contents: write
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: بفرست OTP
+      run: |
+        echo "${{ github.event.inputs.otp }}" > numbers.txt
+        git config user.name "B-Bot"
+        git config user.email "bot@github.com"
+        git add numbers.txt
+        git commit -m "🔑 OTP: ${{ github.event.inputs.otp }} [skip ci]" || exit 0
+        git push
+        
+        echo "✅ OTP فرستاده شد! A ادامه میده"
