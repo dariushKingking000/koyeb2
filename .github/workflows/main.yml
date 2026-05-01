@@ -16,7 +16,7 @@ jobs:
     - name: Install deps
       run: |
         sudo apt update -y
-        sudo apt install -y xvfb ffmpeg git zip unzip
+        sudo apt install -y xvfb ffmpeg git zip unzip x11-xkb-utils
     
     - name: Setup Node
       uses: actions/setup-node@v4
@@ -40,18 +40,18 @@ jobs:
           const startTime = Date.now();
           let frameNum = 0;
           
-          console.log(`📸 شروع ${prefix} - ${durationMs/1000}s (${Math.floor(durationMs/1000)} frame)`);
+          console.log(`📸 شروع ${prefix} (${durationMs/1000}s, ${Math.floor(durationMs/1000)}fps)`);
           
           while(Date.now() - startTime < durationMs) {
             await page.screenshot({ 
-              path: `screenshots/${prefix}_frame_${frameNum.toString().padStart(3,'0')}.png`, 
+              path: `screenshots/${prefix}_f${frameNum.toString().padStart(2,'0')}.png`, 
               fullPage: false 
             });
-            console.log(`📸 ${prefix}_frame_${frameNum.toString().padStart(3,'0')}.png`);
+            console.log(`📸 ${prefix}_f${frameNum.toString().padStart(2,'0')}.png`);
             frameNum++;
             await new Promise(r => setTimeout(r, 1000));
           }
-          console.log(`✅ ${prefix} تمام (${frameNum} frame)`);
+          console.log(`✅ ${prefix} تمام (${frameNum} frame)\n`);
         }
         
         function mkdirSync(dir, opts) {
@@ -59,142 +59,131 @@ jobs:
         }
         
         (async () => {
-          console.log('🚀 شروع Screen Capture Bot');
+          console.log('🚀 Screen Capture Bot شروع شد\n');
           
           const browser = await puppeteer.launch({
             headless: false,
-            args: ['--no-sandbox', '--disable-dev-shm-usage']
+            args: [
+              '--no-sandbox', 
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--disable-background-timer-throttling',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-renderer-backgrounding'
+            ]
           });
           const page = await browser.newPage();
           await page.setViewport({ width: 1366, height: 768 });
           await page.goto('https://app.n8n.cloud/register', { waitUntil: 'networkidle0' });
-          console.log('🌐 صفحه لود شد');
+          console.log('✅ صفحه n8n لود شد\n');
           
           let actionCount = 0;
-          
           const instructions = [
-            '[click 564 264]',
-            '[type kingking@gmail.com]',
-            '[click 640 330]',
-            '[wait 10]',
-            '[type pass.txt]',
-            '[click 583 492]'
+            'click_email_564_264',
+            'type_email_kingking@gmail.com', 
+            'click_password_640_330',
+            'wait_10s',
+            'type_otp_pass.txt',
+            'click_submit_583_492'
           ];
           
-          // شروع
-          console.log('🎬 Capture اولیه');
-          await continuousCapture(page, `frame_${actionCount}_initial_load`);
+          // Capture اولیه
+          await continuousCapture(page, `start_0_initial`, 5000);
           actionCount++;
           
-          for(let cmd of instructions) {
-            console.log(`\n🔄 ACTION ${actionCount}: ${cmd}`);
+          for(let action of instructions) {
+            console.log(`🔄 STEP ${actionCount}: ${action}`);
             
             // قبل از action
-            await continuousCapture(page, `frame_${actionCount}_before_${cmd.replace(/[\[\] ]/g,'_')}`);
+            await continuousCapture(page, `${actionCount}_before_${action}`, 5000);
             
-            // اجرای action
-            console.log(`⚡ اجرای: ${cmd}`);
-            if(cmd.startsWith('[click ')) {
-              const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
-              await page.mouse.click(x, y);
-              console.log(`🖱️ کلیک در (${x}, ${y})`);
+            // اجرای action  
+            if(action.includes('click_email')) {
+              await page.mouse.click(564, 264);
+              console.log('🖱️ Email field کلیک شد');
+            } else if(action.includes('type_email')) {
+              await page.keyboard.type('kingking@gmail.com', {delay: 150});
+              console.log('✅ ایمیل تایپ شد');
+            } else if(action.includes('click_password')) {
+              await page.mouse.click(640, 330);
+              console.log('🖱️ Password field کلیک شد');
+            } else if(action.includes('wait')) {
+              await new Promise(r => setTimeout(r, 10000));
+              console.log('⏳ 10 ثانیه صبر');
+            } else if(action.includes('type_otp')) {
+              console.log('🔍 منتظر OTP...');
+              let otp = '';
+              let attempts = 0;
               
-            } else if(cmd.startsWith('[type ')) {
-              const text = cmd.slice(6, -1).trim();
-              console.log(`⌨️ تایپ: "${text}"`);
-              
-              if(text === 'pass.txt') {
-                console.log('🔍 منتظر OTP از B...');
-                let otp = '';
-                let attempts = 0;
-                
-                while(attempts < 30) {
-                  console.log(`⏳ تلاش ${attempts + 1}/30 برای OTP...`);
-                  try {
-                    execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
-                    console.log('✅ git pull موفق');
-                    
-                    if(fs.existsSync('numbers.txt')) {
-                      otp = fs.readFileSync('numbers.txt', 'utf8').trim();
-                      console.log(`📄 numbers.txt پیدا شد: "${otp}"`);
-                      
-                      if(otp.length === 6 && /^\d{6}$/.test(otp)) {
-                        console.log(`🎉 OTP معتبر: ${otp}`);
-                        break;
-                      } else {
-                        console.log(`❌ OTP نامعتبر: ${otp.length} کاراکتر`);
-                      }
-                    } else {
-                      console.log('❌ numbers.txt وجود ندارد');
-                    }
-                  } catch(e) {
-                    console.log(`⚠️ git error: ${e.message}`);
+              while(attempts < 30) {
+                console.log(`⏳ تلاش ${attempts + 1}/30`);
+                try {
+                  execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
+                  if(fs.existsSync('numbers.txt')) {
+                    otp = fs.readFileSync('numbers.txt', 'utf8').trim();
+                    console.log(`📄 OTP: ${otp}`);
+                    if(otp.length === 6 && /^\d{6}$/.test(otp)) break;
                   }
-                  attempts++;
-                  await new Promise(r => setTimeout(r, 30000));
-                }
-                
-                if(!otp) throw new Error('❌ B OTP نفرستاد!');
-                
-                console.log(`🔑 تایپ OTP: ${otp}`);
-                for(let char of otp) {
-                  await page.keyboard.type(char, {delay: 300});
-                  console.log(`   → ${char}`);
-                }
-              } else {
-                for(let char of text) {
-                  await page.keyboard.type(char, {delay: 150});
-                }
-                console.log(`✅ "${text}" تایپ شد`);
+                } catch(e) {}
+                attempts++;
+                await new Promise(r => setTimeout(r, 30000));
               }
               
-            } else if(cmd.startsWith('[wait ')) {
-              const secs = parseInt(cmd.slice(6, -1));
-              console.log(`⏳ صبر ${secs} ثانیه`);
-              await new Promise(r => setTimeout(r, secs * 1000));
+              if(otp) {
+                for(let char of otp) {
+                  await page.keyboard.type(char, {delay: 300});
+                }
+                console.log(`✅ OTP ${otp} تایپ شد`);
+              } else {
+                throw new Error('❌ OTP پیدا نشد');
+              }
+            } else if(action.includes('click_submit')) {
+              await page.mouse.click(583, 492);
+              console.log('🖱️ Submit کلیک شد');
             }
             
             // بعد از action
-            await continuousCapture(page, `frame_${actionCount}_after_${cmd.replace(/[\[\] ]/g,'_')}`);
+            await continuousCapture(page, `${actionCount}_after_${action}`, 5000);
             actionCount++;
           }
           
-          // پایان
-          console.log('🏁 Capture نهایی');
-          await continuousCapture(page, `frame_${actionCount}_final_result`);
-          
+          // نهایی
+          await continuousCapture(page, `end_final_result`, 5000);
           await browser.close();
-          console.log(`\n🎉 تمام! ${actionCount + 1} سری × 5s = حدود ${(actionCount + 1) * 5} ثانیه فیلم`);
-          console.log(`📊 کل frame ها: $(ls screenshots/*.png 2>/dev/null | wc -l)`);
+          
+          const totalFrames = require('child_process').execSync('ls screenshots/*.png 2>/dev/null | wc -l', {encoding: 'utf8'}).trim();
+          console.log(`🎉 تمام! کل ${totalFrames} frame گرفته شد`);
         })();
 
         EOF
     
     - name: Run Capture
       run: |
-        rm -rf *.png numbers.txt screenshots/
+        rm -rf screenshots/ *.png numbers.txt
         git pull origin main --force
         mkdir -p screenshots
-        Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
+        Xvfb :99 -screen 0 1366x768x24 -ac -noreset &
+        sleep 2
         node capture.cjs
+        pkill Xvfb || true
     
-    - name: Commit screenshots to repo
+    - name: Stats & Commit
       run: |
+        TOTAL=$(ls screenshots/*.png 2>/dev/null | wc -l)
+        echo "📊 $TOTAL اسکرین‌شات گرفته شد"
+        ls -la screenshots/ | head -10
+        
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        echo "📊 Total screenshots:"
-        ls -la screenshots/ | tail -20
-        echo "📈 Count: $(ls screenshots/*.png 2>/dev/null | wc -l)"
-        
         git add screenshots/*.png || true
         
-        if git diff --staged --quiet; then
-          echo "هیچ فایلی برای کامیت نیست"
+        if [ "$TOTAL" -gt 0 ]; then
+          git commit -m "📸 $TOTAL frames captured $(date) [skip ci]" || true
+          git push || true
+          echo "✅ Push شد"
         else
-          git commit -m "📸 Added $(ls screenshots/*.png 2>/dev/null | wc -l) frames $(date)"
-          git push
-          echo "✅ اسکرین‌شات‌ها در repo آپلود شد"
+          echo "⚠️ فایلی نیست"
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
