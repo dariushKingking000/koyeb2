@@ -83,8 +83,8 @@ jobs:
             '[type kingking@gmail.com]',
             '[click 640 330]',
             '[wait 5]',
-            '[click 537 397]'
-            '[wait 2]'
+            '[click 537 397]',
+            '[wait 2]',
             '[type 234568]',
             '[click 583 492]'
           ];
