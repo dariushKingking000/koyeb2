@@ -31,9 +31,6 @@ jobs:
         npm install puppeteer@latest
         echo '{"type": "commonjs"}' > package.json
     
-    - name: Create empty pass.txt
-      run: echo "" > pass.txt
-    
     - name: Create capture.cjs
       run: |
         cat > capture.cjs << 'JS_EOF'
@@ -85,33 +82,33 @@ jobs:
                 const text = cmd.slice(6, -1).trim();
                 
                 if(text === 'pass.txt'){
-                  console.log('🔐 Checking pass.txt for 6 digits...');
+                  console.log('🔐 Checking YOUR pass.txt for 6 digits...');
                   
                   let passContent = '';
                   let attempts = 0;
                   
-                  // هر 1 دقیقه تا 6 رقم پیدا بشه
+                  // هر 1 دقیقه pass.txt رو چک کن تا 6 رقم ببینه
                   while(true){
                     try {
+                      // pass.txt از repo اصلی (چک‌اوت شده)
                       passContent = fs.readFileSync('pass.txt', 'utf8').trim();
                       console.log(`📄 pass.txt: "${passContent}" (length: ${passContent.length})`);
                       
-                      // اگر دقیقاً 6 رقم باشه → تایپ کن
+                      // اگه دقیقاً 6 رقم → تایپ کن
                       if(passContent.length === 6 && /^\d{6}$/.test(passContent)){
-                        console.log(`✅ 6 digits found: ${passContent}`);
+                        console.log(`✅ 6 digits OK: ${passContent}`);
                         break;
                       }
                     }catch(e){
-                      console.log('⚠️ pass.txt empty or error');
+                      console.log('⚠️ pass.txt empty/error');
                     }
                     
-                    // 1 دقیقه صبر + نمایش attempt
                     attempts++;
-                    console.log(`⏳ Wait 1min... (attempt ${attempts})`);
+                    console.log(`⏳ 1min wait... (${attempts})`);
                     await new Promise(r=>setTimeout(r, 60000));
                   }
                   
-                  // حالا تایپ کن
+                  // تایپ رمز
                   let found = false;
                   for(const selector of selectors){
                     try{
@@ -127,12 +124,10 @@ jobs:
                       }
                     }catch(e){}
                   }
-                  if(!found){
-                    await page.keyboard.type(passContent, {delay: 150});
-                  }
+                  if(!found) await page.keyboard.type(passContent, {delay: 150});
                   
                 }else{
-                  // type عادی
+                  // بقیه type ها عادی
                   let found = false;
                   for(const selector of selectors){
                     try{
@@ -166,7 +161,7 @@ jobs:
             
             await new Promise(r=>setTimeout(r, 3000));
             await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`✅ Total: ${frame} frames!`);
+            console.log(`✅ Total frames: ${frame}`);
             
             await browser.close();
           }catch(e){
@@ -184,7 +179,7 @@ jobs:
         sleep 3
         node capture.cjs
         pkill Xvfb || true
-        echo "📄 Final pass.txt:"
+        echo "📄 YOUR pass.txt:"
         cat pass.txt
         echo "📊 Frames: $(ls screenshots/*.png 2>/dev/null | wc -l)"
     
