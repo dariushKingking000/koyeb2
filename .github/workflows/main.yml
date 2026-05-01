@@ -31,6 +31,9 @@ jobs:
         npm install puppeteer@latest
         echo '{"type": "commonjs"}' > package.json
     
+    - name: Create empty pass.txt
+      run: echo "" > pass.txt
+    
     - name: Create capture.cjs
       run: |
         cat > capture.cjs << 'JS_EOF'
@@ -41,13 +44,12 @@ jobs:
           try {
             const instructions = [
               '[click 564 264]',
-              '[type  kingkingplm01@gmail.com]',
+              '[type  kingking@gmail.com]',
               '[wait 5]',
               '[click 640 330]',
               '[wait 10]',
-              '[type 234568]',
-              '[click 200 200]'
-              
+              '[type pass.txt]',
+              '[click 583 492]'
             ];
             
             const browser = await puppeteer.launch({
@@ -67,7 +69,6 @@ jobs:
 
             let frame = 0;
             
-            // Screenshot اولیه - بالاترین فریم
             await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
             console.log(`📸 Frame ${frame}: Initial load`);
             frame++;
@@ -76,67 +77,98 @@ jobs:
               const cmd = instructions[i];
               console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
               
-              // Screenshot قبل از هر دستور - فریم‌های متوالی
               await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
               console.log(`📸 Frame ${frame}: Before ${cmd}`);
               frame++;
               
-              // اجرای دستور
               if(cmd.startsWith('[type ')){
-                let found = false;
-                console.log('🔍 Searching for input field...');
+                const text = cmd.slice(6, -1).trim();
                 
-                // تلاش بیشتر برای پیدا کردن input
-                for(const selector of selectors){
-                  try{
-                    await page.waitForSelector(selector, {timeout: 3000});
-                    const el = await page.$(selector);
-                    if(el){
-                      await el.click({force: true});
-                      await page.waitForTimeout(500); // کمی صبر
-                      const text = cmd.slice(6, -1);
-                      await page.keyboard.type(text, {delay: 150}); // کندتر
-                      console.log(`✅ SUCCESS: Typed "${text}" in ${selector}`);
-                      found = true;
-                      break;
+                if(text === 'pass.txt'){
+                  console.log('🔐 Checking pass.txt for 6 digits...');
+                  
+                  let passContent = '';
+                  let attempts = 0;
+                  
+                  // هر 1 دقیقه تا 6 رقم پیدا بشه
+                  while(true){
+                    try {
+                      passContent = fs.readFileSync('pass.txt', 'utf8').trim();
+                      console.log(`📄 pass.txt: "${passContent}" (length: ${passContent.length})`);
+                      
+                      // اگر دقیقاً 6 رقم باشه → تایپ کن
+                      if(passContent.length === 6 && /^\d{6}$/.test(passContent)){
+                        console.log(`✅ 6 digits found: ${passContent}`);
+                        break;
+                      }
+                    }catch(e){
+                      console.log('⚠️ pass.txt empty or error');
                     }
-                  }catch(e){
-                    console.log(`⏭️ Skipped ${selector}`);
+                    
+                    // 1 دقیقه صبر + نمایش attempt
+                    attempts++;
+                    console.log(`⏳ Wait 1min... (attempt ${attempts})`);
+                    await new Promise(r=>setTimeout(r, 60000));
                   }
-                }
-                
-                if(!found){
-                  console.log('⚠️ Input not found, typing anyway...');
-                  const text = cmd.slice(6, -1);
-                  await page.keyboard.type(text, {delay: 150});
+                  
+                  // حالا تایپ کن
+                  let found = false;
+                  for(const selector of selectors){
+                    try{
+                      await page.waitForSelector(selector, {timeout: 3000});
+                      const el = await page.$(selector);
+                      if(el){
+                        await el.click({force: true});
+                        await page.waitForTimeout(500);
+                        await page.keyboard.type(passContent, {delay: 150});
+                        console.log(`✅ Typed: ${passContent}`);
+                        found = true;
+                        break;
+                      }
+                    }catch(e){}
+                  }
+                  if(!found){
+                    await page.keyboard.type(passContent, {delay: 150});
+                  }
+                  
+                }else{
+                  // type عادی
+                  let found = false;
+                  for(const selector of selectors){
+                    try{
+                      await page.waitForSelector(selector, {timeout: 3000});
+                      const el = await page.$(selector);
+                      if(el){
+                        await el.click({force: true});
+                        await page.waitForTimeout(500);
+                        await page.keyboard.type(text, {delay: 150});
+                        found = true;
+                        break;
+                      }
+                    }catch(e){}
+                  }
+                  if(!found) await page.keyboard.type(text, {delay: 150});
                 }
                 
               }else if(cmd.startsWith('[click ')){
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 await page.mouse.click(x, y);
-                console.log(`🖱️ Clicked at (${x}, ${y})`);
                 
               }else if(cmd.startsWith('[wait ')){
                 const s = parseInt(cmd.slice(6, -1));
-                console.log(`⏳ Waiting ${s}s...`);
                 await new Promise(r=>setTimeout(r, s*1000));
               }
               
-              // Screenshot بعد هر دستور - فریم‌های متوالی
               await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
               console.log(`📸 Frame ${frame}: After ${cmd}`);
               frame++;
             }
             
-            // Screenshot نهایی
             await new Promise(r=>setTimeout(r, 3000));
             await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`📸 Frame ${frame}: Final result`);
-            frame++;
+            console.log(`✅ Total: ${frame} frames!`);
             
             await browser.close();
-            console.log(`✅ Total: ${frame} frames captured!`);
-            console.log(`📁 Check screenshots/frame_0000.png → frame_${(frame-1).toString().padStart(4,'0')}.png`);
           }catch(e){
             console.error('❌ Error:', e.message);
             process.exit(1);
@@ -152,13 +184,12 @@ jobs:
         sleep 3
         node capture.cjs
         pkill Xvfb || true
-        echo "📊 Frames captured:"
-        ls -la screenshots/ | head -20
-        echo "📸 Total: $(ls screenshots/*.png 2>/dev/null | wc -l)"
+        echo "📄 Final pass.txt:"
+        cat pass.txt
+        echo "📊 Frames: $(ls screenshots/*.png 2>/dev/null | wc -l)"
     
     - name: Create ZIP
-      run: |
-        zip -r screenshots.zip screenshots/
+      run: zip -r screenshots.zip screenshots/ pass.txt
     
     - name: Upload ZIP Artifact
       uses: actions/upload-artifact@v4
@@ -167,16 +198,5 @@ jobs:
         path: |
           screenshots.zip
           screenshots/
+          pass.txt
         retention-days: 30
-    
-    - name: Commit & Push
-      run: |
-        git config --global user.name "GitHub Action"
-        git config --global user.email "action@github.com"
-        git add screenshots/*.png screenshots.zip || true
-        if git diff --staged --quiet; then
-          echo "✅ Screenshots ready in Artifacts!"
-        else
-          git commit -m "📸 $(ls screenshots/*.png 2>/dev/null | wc -l | xargs) frames [skip ci]"
-          git push
-        fi
