@@ -25,7 +25,6 @@ jobs:
     
     - name: Install packages
       run: |
-        mkdir -p screenshots
         rm -rf node_modules package*.json
         npm init -y
         npm install puppeteer@latest
@@ -36,6 +35,7 @@ jobs:
         cat > capture.cjs << 'JS_EOF'
         const puppeteer = require('puppeteer');
         const fs = require('fs');
+        const path = require('path');
         
         (async () => {
           try {
@@ -66,7 +66,8 @@ jobs:
 
             let frame = 0;
             
-            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+            // Screenshot اولیه
+            await page.screenshot({ path: `frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
             console.log(`📸 Frame ${frame}: Initial load`);
             frame++;
 
@@ -74,33 +75,31 @@ jobs:
               const cmd = instructions[i];
               console.log(`🔄 ${i+1}/${instructions.length}: ${cmd}`);
               
-              await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+              // Screenshot قبل
+              await page.screenshot({ path: `frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
               console.log(`📸 Frame ${frame}: Before ${cmd}`);
               frame++;
               
+              // اجرای دستور
               if(cmd.startsWith('[type ')){
                 const text = cmd.slice(6, -1).trim();
                 
                 if(text === 'pass.txt'){
-                  console.log('🔐 Checking YOUR pass.txt for 6 digits...');
-                  
+                  console.log('🔐 Checking pass.txt...');
                   let passContent = '';
                   let attempts = 0;
                   
-                  // هر 1 دقیقه pass.txt رو چک کن تا 6 رقم ببینه
                   while(true){
                     try {
-                      // pass.txt از repo اصلی (چک‌اوت شده)
                       passContent = fs.readFileSync('pass.txt', 'utf8').trim();
-                      console.log(`📄 pass.txt: "${passContent}" (length: ${passContent.length})`);
+                      console.log(`📄 pass.txt: "${passContent}" (${passContent.length} chars)`);
                       
-                      // اگه دقیقاً 6 رقم → تایپ کن
                       if(passContent.length === 6 && /^\d{6}$/.test(passContent)){
-                        console.log(`✅ 6 digits OK: ${passContent}`);
+                        console.log(`✅ Found 6 digits: ${passContent}`);
                         break;
                       }
                     }catch(e){
-                      console.log('⚠️ pass.txt empty/error');
+                      console.log('⚠️ pass.txt empty');
                     }
                     
                     attempts++;
@@ -108,7 +107,7 @@ jobs:
                     await new Promise(r=>setTimeout(r, 60000));
                   }
                   
-                  // تایپ رمز
+                  // تایپ pass
                   let found = false;
                   for(const selector of selectors){
                     try{
@@ -118,7 +117,7 @@ jobs:
                         await el.click({force: true});
                         await page.waitForTimeout(500);
                         await page.keyboard.type(passContent, {delay: 150});
-                        console.log(`✅ Typed: ${passContent}`);
+                        console.log(`✅ Typed password`);
                         found = true;
                         break;
                       }
@@ -127,7 +126,7 @@ jobs:
                   if(!found) await page.keyboard.type(passContent, {delay: 150});
                   
                 }else{
-                  // بقیه type ها عادی
+                  // type عادی
                   let found = false;
                   for(const selector of selectors){
                     try{
@@ -148,20 +147,23 @@ jobs:
               }else if(cmd.startsWith('[click ')){
                 const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
                 await page.mouse.click(x, y);
+                console.log(`🖱️ Clicked (${x},${y})`);
                 
               }else if(cmd.startsWith('[wait ')){
                 const s = parseInt(cmd.slice(6, -1));
+                console.log(`⏳ Wait ${s}s`);
                 await new Promise(r=>setTimeout(r, s*1000));
               }
               
-              await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+              // Screenshot بعد
+              await page.screenshot({ path: `frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
               console.log(`📸 Frame ${frame}: After ${cmd}`);
               frame++;
             }
             
             await new Promise(r=>setTimeout(r, 3000));
-            await page.screenshot({ path: `screenshots/frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
-            console.log(`✅ Total frames: ${frame}`);
+            await page.screenshot({ path: `frame_${frame.toString().padStart(4,'0')}.png`, fullPage: false });
+            console.log(`✅ Total: ${frame} frames in ROOT!`);
             
             await browser.close();
           }catch(e){
@@ -173,18 +175,22 @@ jobs:
     
     - name: Capture Screenshots
       run: |
-        rm -rf screenshots/*.png
+        rm -rf *.png
         Xvfb :99 -screen 0 1366x768x24 -ac &
         export DISPLAY=:99
         sleep 3
         node capture.cjs
         pkill Xvfb || true
-        echo "📄 YOUR pass.txt:"
+        
+        echo "📄 pass.txt:"
         cat pass.txt
-        echo "📊 Frames: $(ls screenshots/*.png 2>/dev/null | wc -l)"
+        echo "📊 Root frames:"
+        ls -la *.png | head -20
+        echo "📸 Total: $(ls *.png 2>/dev/null | wc -l)"
     
     - name: Create ZIP
-      run: zip -r screenshots.zip screenshots/ pass.txt
+      run: |
+        zip -r screenshots.zip *.png pass.txt
     
     - name: Upload ZIP Artifact
       uses: actions/upload-artifact@v4
@@ -192,6 +198,18 @@ jobs:
         name: 📸-n8n-register-screenshots
         path: |
           screenshots.zip
-          screenshots/
+          *.png
           pass.txt
         retention-days: 30
+    
+    - name: Commit & Push
+      run: |
+        git config --global user.name "GitHub Action"
+        git config --global user.email "action@github.com"
+        git add *.png screenshots.zip pass.txt || true
+        if git diff --staged --quiet; then
+          echo "✅ Files in ROOT + Artifacts!"
+        else
+          git commit -m "📸 $(ls *.png 2>/dev/null | wc -l | xargs) frames [skip ci]"
+          git push
+        fi
