@@ -1,15 +1,8 @@
-name: Delete Screenshots
-
-on:
-  workflow_dispatch:
-
+name: Clean Screenshots
+on: [push]
 jobs:
   clean:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Delete screenshots
-      run: |
-        rm -rf screenshots/*
-        echo "✅ پوشه screenshots خالی شد"
+    - run: rm -rf screenshots/*
