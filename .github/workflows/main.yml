@@ -40,14 +40,18 @@ jobs:
           const startTime = Date.now();
           let frameNum = 0;
           
+          console.log(`📸 شروع ${prefix} - ${durationMs/1000}s (${Math.floor(durationMs/1000)} frame)`);
+          
           while(Date.now() - startTime < durationMs) {
             await page.screenshot({ 
               path: `screenshots/${prefix}_frame_${frameNum.toString().padStart(3,'0')}.png`, 
               fullPage: false 
             });
+            console.log(`📸 ${prefix}_frame_${frameNum.toString().padStart(3,'0')}.png`);
             frameNum++;
-            await new Promise(r => setTimeout(r, 1000)); // 1 ثانیه 1 frame
+            await new Promise(r => setTimeout(r, 1000));
           }
+          console.log(`✅ ${prefix} تمام (${frameNum} frame)`);
         }
         
         function mkdirSync(dir, opts) {
@@ -55,6 +59,8 @@ jobs:
         }
         
         (async () => {
+          console.log('🚀 شروع Screen Capture Bot');
+          
           const browser = await puppeteer.launch({
             headless: false,
             args: ['--no-sandbox', '--disable-dev-shm-usage']
@@ -62,6 +68,7 @@ jobs:
           const page = await browser.newPage();
           await page.setViewport({ width: 1366, height: 768 });
           await page.goto('https://app.n8n.cloud/register', { waitUntil: 'networkidle0' });
+          console.log('🌐 صفحه لود شد');
           
           let actionCount = 0;
           
@@ -74,66 +81,91 @@ jobs:
             '[click 583 492]'
           ];
           
-          // شروع با 5 ثانیه capture
+          // شروع
+          console.log('🎬 Capture اولیه');
           await continuousCapture(page, `frame_${actionCount}_initial_load`);
           actionCount++;
           
           for(let cmd of instructions) {
-            console.log(`🔄 ${actionCount}: ${cmd}`);
+            console.log(`\n🔄 ACTION ${actionCount}: ${cmd}`);
             
-            // 5 ثانیه قبل از هر action
+            // قبل از action
             await continuousCapture(page, `frame_${actionCount}_before_${cmd.replace(/[\[\] ]/g,'_')}`);
             
             // اجرای action
+            console.log(`⚡ اجرای: ${cmd}`);
             if(cmd.startsWith('[click ')) {
               const [x, y] = cmd.slice(7, -1).split(' ').map(Number);
               await page.mouse.click(x, y);
+              console.log(`🖱️ کلیک در (${x}, ${y})`);
               
             } else if(cmd.startsWith('[type ')) {
               const text = cmd.slice(6, -1).trim();
+              console.log(`⌨️ تایپ: "${text}"`);
+              
               if(text === 'pass.txt') {
                 console.log('🔍 منتظر OTP از B...');
                 let otp = '';
                 let attempts = 0;
                 
                 while(attempts < 30) {
+                  console.log(`⏳ تلاش ${attempts + 1}/30 برای OTP...`);
                   try {
                     execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
+                    console.log('✅ git pull موفق');
+                    
                     if(fs.existsSync('numbers.txt')) {
                       otp = fs.readFileSync('numbers.txt', 'utf8').trim();
-                      if(otp.length === 6 && /^\d{6}$/.test(otp)) break;
+                      console.log(`📄 numbers.txt پیدا شد: "${otp}"`);
+                      
+                      if(otp.length === 6 && /^\d{6}$/.test(otp)) {
+                        console.log(`🎉 OTP معتبر: ${otp}`);
+                        break;
+                      } else {
+                        console.log(`❌ OTP نامعتبر: ${otp.length} کاراکتر`);
+                      }
+                    } else {
+                      console.log('❌ numbers.txt وجود ندارد');
                     }
-                  } catch(e) {}
+                  } catch(e) {
+                    console.log(`⚠️ git error: ${e.message}`);
+                  }
                   attempts++;
                   await new Promise(r => setTimeout(r, 30000));
                 }
                 
                 if(!otp) throw new Error('❌ B OTP نفرستاد!');
                 
+                console.log(`🔑 تایپ OTP: ${otp}`);
                 for(let char of otp) {
                   await page.keyboard.type(char, {delay: 300});
+                  console.log(`   → ${char}`);
                 }
               } else {
                 for(let char of text) {
                   await page.keyboard.type(char, {delay: 150});
                 }
+                console.log(`✅ "${text}" تایپ شد`);
               }
               
             } else if(cmd.startsWith('[wait ')) {
               const secs = parseInt(cmd.slice(6, -1));
+              console.log(`⏳ صبر ${secs} ثانیه`);
               await new Promise(r => setTimeout(r, secs * 1000));
             }
             
-            // 5 ثانیه بعد هر action
+            // بعد از action
             await continuousCapture(page, `frame_${actionCount}_after_${cmd.replace(/[\[\] ]/g,'_')}`);
             actionCount++;
           }
           
-          // 5 ثانیه آخر
+          // پایان
+          console.log('🏁 Capture نهایی');
           await continuousCapture(page, `frame_${actionCount}_final_result`);
           
           await browser.close();
-          console.log(`✅ تمام! ${actionCount + 1} سری 5s capture (حدود 30+ frame هر سری)`);
+          console.log(`\n🎉 تمام! ${actionCount + 1} سری × 5s = حدود ${(actionCount + 1) * 5} ثانیه فیلم`);
+          console.log(`📊 کل frame ها: $(ls screenshots/*.png 2>/dev/null | wc -l)`);
         })();
 
         EOF
@@ -151,15 +183,16 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        echo "📊 Total screenshots:"
         ls -la screenshots/ | tail -20
-        echo "📊 Total frames: $(ls screenshots/*.png 2>/dev/null | wc -l)"
+        echo "📈 Count: $(ls screenshots/*.png 2>/dev/null | wc -l)"
         
         git add screenshots/*.png || true
         
         if git diff --staged --quiet; then
           echo "هیچ فایلی برای کامیت نیست"
         else
-          git commit -m "📸 Added $(ls screenshots/ | wc -l) screenshots $(date)"
+          git commit -m "📸 Added $(ls screenshots/*.png 2>/dev/null | wc -l) frames $(date)"
           git push
           echo "✅ اسکرین‌شات‌ها در repo آپلود شد"
         fi
