@@ -16,7 +16,7 @@ jobs:
     - name: Install deps
       run: |
         sudo apt update -y
-        sudo apt install -y xvfb ffmpeg git
+        sudo apt install -y xvfb ffmpeg git zip unzip
     
     - name: Setup Node
       uses: actions/setup-node@v4
@@ -50,7 +50,7 @@ jobs:
             '[wait 5]',
             '[click 640 330]',
             '[wait 10]',
-            '[type pass.txt]',  // ← اینجا منتظر B
+            '[type pass.txt]',
             '[click 583 492]'
           ];
           
@@ -67,7 +67,7 @@ jobs:
               let otp = '';
               let attempts = 0;
               
-              while(attempts < 30) {  // 15 دقیقه صبر
+              while(attempts < 30) {
                 try {
                   execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
                   if(fs.existsSync('numbers.txt')) {
@@ -88,7 +88,6 @@ jobs:
               
               if(!otp) throw new Error('❌ B OTP نفرستاد!');
               
-              // تایپ OTP
               await page.keyboard.type(otp, {delay: 200});
               console.log(`✅ OTP تایپ شد: ${otp}`);
               
@@ -113,19 +112,27 @@ jobs:
     
     - name: Run Capture
       run: |
-        rm -rf *.png numbers.txt
+        rm -rf *.png numbers.txt screenshots/
         git pull origin main --force
+        mkdir -p screenshots
         Xvfb :99 -screen 0 1366x768x24 &
         export DISPLAY=:99
         node capture.cjs
     
-    - name: ZIP & Upload
+    - name: Commit screenshots to repo
       run: |
-        zip -r screenshots.zip *.png
-        ls -la *.png
-      if: always()
-    
-    - uses: actions/upload-artifact@v4
-      with:
-        name: screenshots
-        path: screenshots.zip
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        git add screenshots/*.png || true
+        git add *.png || true
+        
+        if git diff --staged --quiet; then
+          echo "هیچ فایلی برای کامیت نیست"
+        else
+          git commit -m "📸 Added screenshots $(date '+%Y-%m-%d %H:%M:%S')"
+          git push
+          echo "✅ اسکرین‌شات‌ها در repo اصلی آپلود شد"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
