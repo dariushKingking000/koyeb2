@@ -38,20 +38,20 @@ jobs:
         async function continuousCapture(page, prefix, durationMs = 5000) {
           mkdirSync('screenshots', { recursive: true });
           const startTime = Date.now();
-          let frameNum = 0;
+          let frameNum = 1;
           
-          console.log(`📸 شروع ${prefix} (${durationMs/1000}s, ${Math.floor(durationMs/1000)}fps)`);
+          console.log(`📸 شروع ${prefix} (${durationMs/1000}s)`);
           
           while(Date.now() - startTime < durationMs) {
             await page.screenshot({ 
-              path: `screenshots/${prefix}_f${frameNum.toString().padStart(2,'0')}.png`, 
+              path: `screenshots/${prefix}_f${frameNum}.png`, 
               fullPage: false 
             });
-            console.log(`📸 ${prefix}_f${frameNum.toString().padStart(2,'0')}.png`);
+            console.log(`📸 ${prefix}_f${frameNum}.png`);
             frameNum++;
             await new Promise(r => setTimeout(r, 1000));
           }
-          console.log(`✅ ${prefix} تمام (${frameNum} frame)\n`);
+          console.log(`✅ ${prefix} تمام (${frameNum-1} frame)\n`);
         }
         
         function mkdirSync(dir, opts) {
