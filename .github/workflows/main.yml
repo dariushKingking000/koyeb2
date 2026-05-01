@@ -79,12 +79,12 @@ jobs:
           
           let actionCount = 0;
           const instructions = [
-            'click_email_564_264',
-            'type_email_kingking@gmail.com', 
-            'click_password_640_330',
-            'wait_10s',
-            'type_otp_pass.txt',
-            'click_submit_583_492'
+            '[click 564 264]',
+            '[type kingking@gmail.com]',
+            '[click 640 330]',
+            '[wait 10]',
+            '[type 234568]',
+            '[click 583 492]'
           ];
           
           // Capture اولیه
@@ -95,22 +95,22 @@ jobs:
             console.log(`🔄 STEP ${actionCount}: ${action}`);
             
             // قبل از action
-            await continuousCapture(page, `${actionCount}_before_${action}`, 5000);
+            await continuousCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`, 5000);
             
             // اجرای action  
-            if(action.includes('click_email')) {
+            if(action.includes('click 564 264')) {
               await page.mouse.click(564, 264);
               console.log('🖱️ Email field کلیک شد');
-            } else if(action.includes('type_email')) {
+            } else if(action.includes('type kingking@gmail.com')) {
               await page.keyboard.type('kingking@gmail.com', {delay: 150});
               console.log('✅ ایمیل تایپ شد');
-            } else if(action.includes('click_password')) {
+            } else if(action.includes('click 640 330')) {
               await page.mouse.click(640, 330);
               console.log('🖱️ Password field کلیک شد');
-            } else if(action.includes('wait')) {
+            } else if(action.includes('wait 10')) {
               await new Promise(r => setTimeout(r, 10000));
               console.log('⏳ 10 ثانیه صبر');
-            } else if(action.includes('type_otp')) {
+            } else if(action.includes('type 234568')) {
               console.log('🔍 منتظر OTP...');
               let otp = '';
               let attempts = 0;
@@ -137,13 +137,13 @@ jobs:
               } else {
                 throw new Error('❌ OTP پیدا نشد');
               }
-            } else if(action.includes('click_submit')) {
+            } else if(action.includes('click 583 492')) {
               await page.mouse.click(583, 492);
               console.log('🖱️ Submit کلیک شد');
             }
             
             // بعد از action
-            await continuousCapture(page, `${actionCount}_after_${action}`, 5000);
+            await continuousCapture(page, `${actionCount}_after_${action.replace(/[\[\] ]/g,'')}`, 5000);
             actionCount++;
           }
           
