@@ -35,6 +35,10 @@ jobs:
         const fs = require('fs');
         const { execSync } = require('child_process');
         
+        async function sleep(ms) {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
         async function continuousCapture(page, prefix, durationMs = 5000) {
           mkdirSync('screenshots', { recursive: true });
           const startTime = Date.now();
@@ -49,7 +53,7 @@ jobs:
             });
             console.log(`📸 ${prefix}_f${frameNum}.png`);
             frameNum++;
-            await new Promise(r => setTimeout(r, 1000));
+            await sleep(1000);
           }
           console.log(`✅ ${prefix} تمام (${frameNum-1} frame)\n`);
         }
@@ -99,22 +103,22 @@ jobs:
             
             // اجرای action  
             if(action.includes('click 564 264')) {
-              await page.waitForTimeout(1000);
+              await sleep(1000);
               await page.mouse.click(564, 264, {delay: 100});
-              await page.waitForTimeout(500);
+              await sleep(500);
               console.log('🖱️ Email field کلیک شد');
             } else if(action.includes('type kingking@gmail.com')) {
-              await page.waitForTimeout(1000);
+              await sleep(1000);
               await page.keyboard.type('kingking@gmail.com', {delay: 150});
-              await page.waitForTimeout(500);
+              await sleep(500);
               console.log('✅ ایمیل تایپ شد');
             } else if(action.includes('click 640 330')) {
-              await page.waitForTimeout(1000);
+              await sleep(1000);
               await page.mouse.click(640, 330, {delay: 100});
-              await page.waitForTimeout(500);
+              await sleep(500);
               console.log('🖱️ Password field کلیک شد');
             } else if(action.includes('wait 10')) {
-              await new Promise(r => setTimeout(r, 10000));
+              await sleep(10000);
               console.log('⏳ 10 ثانیه صبر');
             } else if(action.includes('type 234568')) {
               console.log('🔍 منتظر OTP...');
@@ -132,24 +136,24 @@ jobs:
                   }
                 } catch(e) {}
                 attempts++;
-                await new Promise(r => setTimeout(r, 30000));
+                await sleep(30000);
               }
               
               if(otp) {
-                await page.waitForTimeout(1000);
+                await sleep(1000);
                 for(let char of otp) {
                   await page.keyboard.type(char, {delay: 300});
-                  await page.waitForTimeout(200);
+                  await sleep(200);
                 }
-                await page.waitForTimeout(500);
+                await sleep(500);
                 console.log(`✅ OTP ${otp} تایپ شد`);
               } else {
                 throw new Error('❌ OTP پیدا نشد');
               }
             } else if(action.includes('click 583 492')) {
-              await page.waitForTimeout(1000);
+              await sleep(1000);
               await page.mouse.click(583, 492, {delay: 100});
-              await page.waitForTimeout(2000);
+              await sleep(2000);
               console.log('🖱️ Submit کلیک شد');
             }
             
