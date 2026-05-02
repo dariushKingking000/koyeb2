@@ -36,7 +36,7 @@ jobs:
         const { execSync } = require('child_process');
         
         async function continuousCapture(page, prefix, durationMs = 5000) {
-          mkdirSync('screenshots', { recursive: true });
+          fs.mkdirSync('screenshots', { recursive: true });
           const startTime = Date.now();
           let frameNum = 1;
           
@@ -44,18 +44,14 @@ jobs:
           
           while(Date.now() - startTime < durationMs) {
             await page.screenshot({ 
-              path: `screenshots/${prefix}_f${frameNum}.png`, 
-              fullPage: false 
+              path: `./screenshots/${prefix}_f${frameNum}.png`, 
+              fullPage: true 
             });
-            console.log(`📸 ${prefix}_f${frameNum}.png`);
+            console.log(`📸 screenshots/${prefix}_f${frameNum}.png`);
             frameNum++;
             await new Promise(r => setTimeout(r, 1000));
           }
           console.log(`✅ ${prefix} تمام (${frameNum-1} frame)\n`);
-        }
-        
-        function mkdirSync(dir, opts) {
-          try { fs.mkdirSync(dir, opts); } catch(e) {}
         }
         
         (async () => {
