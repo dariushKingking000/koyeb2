@@ -87,8 +87,9 @@ jobs:
             '[click 541 401]',
             '[type 234568]',
             '[click 583 492]'
-            '[wait 10]',
+            '[wait 9]',
             '[click 100 100]'
+            
           ];
           
           // Capture اولیه (frames 001-005)
