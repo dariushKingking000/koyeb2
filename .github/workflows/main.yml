@@ -154,7 +154,7 @@ jobs:
     
     - name: Run Capture
       run: |
-        rm -rf screenshots/ *.png numbers.txt
+        rm -rf screenshots/
         git pull origin main --force
         mkdir -p screenshots
         export DISPLAY=:99
@@ -165,20 +165,30 @@ jobs:
     
     - name: Stats & Commit
       run: |
-        TOTAL=$(ls screenshots/*.png 2>/dev/null | wc -l)
+        TOTAL=$(find screenshots -name "*.png" | wc -l)
         echo "📊 $TOTAL اسکرین‌شات گرفته شد"
         ls -la screenshots/ | head -10
         
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add screenshots/*.png || true
+        git config --global user.email "action@github.com"
+        git config --global user.name "GitHub Action"
         
-        if [ "$TOTAL" -gt 0 ]; then
-          git commit -m "📸 $TOTAL frames captured $(date) [skip ci]" || true
-          git push || true
+        git add screenshots/ -f
+        git add . -f
+        
+        if [ "$TOTAL" -gt 0 ] && ! git diff --staged --quiet; then
+          git commit -m "📸 $TOTAL frames captured $(date +%Y-%m-%d_%H-%M-%S) [skip ci]" || true
+          git push origin HEAD:main -f || true
           echo "✅ Push شد"
         else
-          echo "⚠️ فایلی نیست"
+          echo "⚠️ فایلی نیست یا قبلاً push شده"
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Upload Artifact (Backup)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: screenshots-${{ github.run_number }}
+        path: screenshots/
+        retention-days: 7
