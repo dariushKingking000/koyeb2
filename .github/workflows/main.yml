@@ -81,7 +81,7 @@ jobs:
           let actionCount = 0;
           const instructions = [
             '[click 564 264]',
-            '[type kingkingp@gmail.com]',
+            '[type kingkingplm01@gmail.com]',
             '[click 640 330]',
             '[wait 10]',
             '[click 541 401]',
