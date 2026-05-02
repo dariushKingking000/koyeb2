@@ -88,7 +88,18 @@ jobs:
             '[type 234568]',
             '[click 583 492]',
             '[wait 9]',
-            '[click 100 100]'
+            '[click 515 267]',
+            '[type dariushert]',
+            '[click 525 347]',
+            '[type Kingking00@]',
+            '[click 532 431]',
+            '[type fsfsdklj]',
+            '[click 503 511]',
+            '[wait 11]',
+            '[click 517 600]',
+            '[wait 13]',
+            '[click 578 680]'
+            
             
           ];
           
