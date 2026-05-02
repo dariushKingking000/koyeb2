@@ -36,7 +36,7 @@ jobs:
         const { execSync } = require('child_process');
         
         async function continuousCapture(page, prefix, durationMs = 5000) {
-          fs.mkdirSync('screenshots', { recursive: true });
+          fs.mkdirSync('all-screenshots', { recursive: true });
           const startTime = Date.now();
           let frameNum = 1;
           
@@ -44,10 +44,10 @@ jobs:
           
           while(Date.now() - startTime < durationMs) {
             await page.screenshot({ 
-              path: `./screenshots/${prefix}_f${frameNum}.png`, 
+              path: `./all-screenshots/${prefix}_f${frameNum}.png`, 
               fullPage: true 
             });
-            console.log(`📸 screenshots/${prefix}_f${frameNum}.png`);
+            console.log(`📸 all-screenshots/${prefix}_f${frameNum}.png`);
             frameNum++;
             await new Promise(r => setTimeout(r, 1000));
           }
@@ -146,7 +146,7 @@ jobs:
           await continuousCapture(page, `end_final_result`, 5000);
           await browser.close();
           
-          const totalFrames = require('child_process').execSync('ls screenshots/*.png 2>/dev/null | wc -l', {encoding: 'utf8'}).trim();
+          const totalFrames = require('child_process').execSync('ls all-screenshots/*.png 2>/dev/null | wc -l', {encoding: 'utf8'}).trim();
           console.log(`🎉 تمام! کل ${totalFrames} frame گرفته شد`);
         })();
 
@@ -154,9 +154,9 @@ jobs:
     
     - name: Run Capture
       run: |
-        rm -rf screenshots/
+        rm -rf all-screenshots/
         git pull origin main --force
-        mkdir -p screenshots
+        mkdir -p all-screenshots
         export DISPLAY=:99
         Xvfb :99 -screen 0 1366x768x24 -ac -noreset &
         sleep 2
@@ -165,14 +165,14 @@ jobs:
     
     - name: Stats & Commit
       run: |
-        TOTAL=$(find screenshots -name "*.png" | wc -l)
+        TOTAL=$(find all-screenshots -name "*.png" | wc -l)
         echo "📊 $TOTAL اسکرین‌شات گرفته شد"
-        ls -la screenshots/ | head -10
+        ls -la all-screenshots/ | head -10
         
         git config --global user.email "action@github.com"
         git config --global user.name "GitHub Action"
         
-        git add screenshots/ -f
+        git add all-screenshots/ -f
         git add . -f
         
         if [ "$TOTAL" -gt 0 ] && ! git diff --staged --quiet; then
@@ -184,11 +184,3 @@ jobs:
         fi
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Upload Artifact (Backup)
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: screenshots-${{ github.run_number }}
-        path: screenshots/
-        retention-days: 7
