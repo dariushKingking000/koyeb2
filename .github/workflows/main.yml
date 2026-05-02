@@ -34,24 +34,29 @@ jobs:
         const puppeteer = require('puppeteer');
         const fs = require('fs');
         const { execSync } = require('child_process');
+        const path = require('path');
         
-        async function continuousCapture(page, prefix, durationMs = 5000) {
+        let globalFrameCounter = 1;
+        
+        async function sequentialCapture(page, prefix, durationMs = 5000) {
           fs.mkdirSync('all-screenshots', { recursive: true });
           const startTime = Date.now();
-          let frameNum = 1;
           
-          console.log(`📸 شروع ${prefix} (${durationMs/1000}s)`);
+          console.log(`📸 شروع ${prefix} (frame ${globalFrameCounter}-${globalFrameCounter + 4})`);
           
-          while(Date.now() - startTime < durationMs) {
+          let framesTaken = 0;
+          while(Date.now() - startTime < durationMs && framesTaken < 5) {
+            const framePath = `./all-screenshots/${globalFrameCounter.toString().padStart(3, '0')}_${prefix}.png`;
             await page.screenshot({ 
-              path: `./all-screenshots/${prefix}_f${frameNum}.png`, 
+              path: framePath, 
               fullPage: true 
             });
-            console.log(`📸 all-screenshots/${prefix}_f${frameNum}.png`);
-            frameNum++;
+            console.log(`📸 ${framePath}`);
+            globalFrameCounter++;
+            framesTaken++;
             await new Promise(r => setTimeout(r, 1000));
           }
-          console.log(`✅ ${prefix} تمام (${frameNum-1} frame)\n`);
+          console.log(`✅ ${prefix} تمام (${framesTaken} frame)\n`);
         }
         
         (async () => {
@@ -83,15 +88,15 @@ jobs:
             '[click 583 492]'
           ];
           
-          // Capture اولیه
-          await continuousCapture(page, `start_0_initial`, 5000);
+          // Capture اولیه (frames 001-005)
+          await sequentialCapture(page, 'start_0_initial');
           actionCount++;
           
           for(let action of instructions) {
             console.log(`🔄 STEP ${actionCount}: ${action}`);
             
-            // قبل از action
-            await continuousCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`, 5000);
+            // قبل از action (5 frames)
+            await sequentialCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`);
             
             // اجرای action  
             if(action.startsWith('[click ')){
@@ -137,17 +142,17 @@ jobs:
               console.log('⏳ 10 ثانیه صبر');
             }
             
-            // بعد از action
-            await continuousCapture(page, `${actionCount}_after_${action.replace(/[\[\] ]/g,'')}`, 5000);
+            // بعد از action (5 frames)
+            await sequentialCapture(page, `${actionCount}_after_${action.replace(/[\[\] ]/g,'')}`);
             actionCount++;
           }
           
-          // نهایی
-          await continuousCapture(page, `end_final_result`, 5000);
+          // نهایی (5 frames آخر)
+          await sequentialCapture(page, 'end_final_result');
           await browser.close();
           
-          const totalFrames = require('child_process').execSync('ls all-screenshots/*.png 2>/dev/null | wc -l', {encoding: 'utf8'}).trim();
-          console.log(`🎉 تمام! کل ${totalFrames} frame گرفته شد`);
+          const totalFrames = globalFrameCounter - 1;
+          console.log(`🎉 تمام! کل ${totalFrames} frame متوالی (001.png تا ${totalFrames.toString().padStart(3, '0')}.png)`);
         })();
 
         EOF
@@ -166,7 +171,7 @@ jobs:
     - name: Stats & Commit
       run: |
         TOTAL=$(find all-screenshots -name "*.png" | wc -l)
-        echo "📊 $TOTAL اسکرین‌شات گرفته شد"
+        echo "📊 $TOTAL اسکرین‌شات متوالی گرفته شد (001.png → ${TOTAL}.png)"
         ls -la all-screenshots/ | head -10
         
         git config --global user.email "action@github.com"
@@ -176,9 +181,9 @@ jobs:
         git add . -f
         
         if [ "$TOTAL" -gt 0 ] && ! git diff --staged --quiet; then
-          git commit -m "📸 $TOTAL frames captured $(date +%Y-%m-%d_%H-%M-%S) [skip ci]" || true
+          git commit -m "📸 $TOTAL frames sequential (001-${TOTAL}.png) $(date +%Y-%m-%d_%H-%M-%S) [skip ci]" || true
           git push origin HEAD:main -f || true
-          echo "✅ Push شد"
+          echo "✅ Push شد - frames 001.png تا ${TOTAL}.png"
         else
           echo "⚠️ فایلی نیست یا قبلاً push شده"
         fi
