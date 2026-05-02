@@ -81,17 +81,10 @@ jobs:
           const instructions = [
             '[click 564 264]',
             '[type kingking@gmail.com]',
-            '[wait 5]',
             '[click 640 330]',
             '[wait 10]',
-            '[type pass.txt]',
+            '[type 234568]',
             '[click 583 492]'
-          ];
-          
-          const selectors = [
-            'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
-            'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]',
-            'input[type="text"]', 'input[type="email"]', '#email', '#username'
           ];
           
           // Capture اولیه
@@ -104,76 +97,48 @@ jobs:
             // قبل از action
             await continuousCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`, 5000);
             
-            if(action.startsWith('[type ')){
-              const text = action.slice(6, -1).trim();
-              
-              if(text === 'pass.txt'){
-                console.log('🔍 منتظر اعداد از B...');
-                let passContent = '';
-                let attempts = 0;
-                
-                while(true){
-                  try {
-                    passContent = execSync('git pull origin main --quiet 2>/dev/null || true && cat numbers.txt 2>/dev/null || echo ""', 
-                      {encoding: 'utf8', timeout: 15000}).trim();
-                    
-                    console.log(`📄 numbers.txt: "${passContent}" (${passContent.length} chars)`);
-                    
-                    if(passContent.length === 6 && /^\d{6}$/.test(passContent)){
-                      console.log(`✅ اعداد از B رسید: ${passContent}`);
-                      break;
-                    }
-                  }catch(e){
-                    console.log(`⏳ B هنوز نفرستاده... (${++attempts})`);
-                  }
-                  await new Promise(r=>setTimeout(r, 30000));
-                }
-                
-                // تایپ رمز
-                let found = false;
-                for(const selector of selectors){
-                  try{
-                    await page.waitForSelector(selector, {timeout: 3000});
-                    const el = await page.$(selector);
-                    if(el){
-                      await el.click({force: true});
-                      await page.waitForTimeout(500);
-                      await page.keyboard.type(passContent, {delay: 150});
-                      console.log(`✅ رمز تایپ شد: ${passContent}`);
-                      found = true;
-                      break;
-                    }
-                  }catch(e){}
-                }
-                if(!found) await page.keyboard.type(passContent, {delay: 150});
-                
-              }else{
-                let found = false;
-                for(const selector of selectors){
-                  try{
-                    await page.waitForSelector(selector, {timeout: 3000});
-                    const el = await page.$(selector);
-                    if(el){
-                      await el.click({force: true});
-                      await page.waitForTimeout(500);
-                      await page.keyboard.type(text, {delay: 150});
-                      found = true;
-                      break;
-                    }
-                  }catch(e){}
-                }
-                if(!found) await page.keyboard.type(text, {delay: 150});
-              }
-              
-            }else if(action.startsWith('[click ')){
+            // اجرای action  
+            if(action.startsWith('[click ')){
               const [x, y] = action.slice(7, -1).split(' ').map(Number);
               await page.mouse.click(x, y);
               console.log(`🖱️ Clicked (${x},${y})`);
+            } else if(action.startsWith('[type ')){
+              const text = action.slice(6, -1).trim();
               
-            }else if(action.startsWith('[wait ')){
-              const s = parseInt(action.slice(6, -1));
-              console.log(`⏳ Wait ${s}s`);
-              await new Promise(r=>setTimeout(r, s*1000));
+              if(text === '234568'){
+                console.log('🔍 منتظر OTP...');
+                let otp = '';
+                let attempts = 0;
+                
+                while(attempts < 30) {
+                  console.log(`⏳ تلاش ${attempts + 1}/30`);
+                  try {
+                    execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
+                    if(fs.existsSync('numbers.txt')) {
+                      otp = fs.readFileSync('numbers.txt', 'utf8').trim();
+                      console.log(`📄 OTP: ${otp}`);
+                      if(otp.length === 6 && /^\d{6}$/.test(otp)) break;
+                    }
+                  } catch(e) {}
+                  attempts++;
+                  await new Promise(r => setTimeout(r, 30000));
+                }
+                
+                if(otp) {
+                  for(let char of otp) {
+                    await page.keyboard.type(char, {delay: 300});
+                  }
+                  console.log(`✅ OTP ${otp} تایپ شد`);
+                } else {
+                  throw new Error('❌ OTP پیدا نشد');
+                }
+              } else {
+                await page.keyboard.type(text, {delay: 150});
+                console.log(`✅ ${text} تایپ شد`);
+              }
+            } else if(action.includes('wait 10')) {
+              await new Promise(r => setTimeout(r, 10000));
+              console.log('⏳ 10 ثانیه صبر');
             }
             
             // بعد از action
