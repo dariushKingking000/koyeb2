@@ -35,10 +35,6 @@ jobs:
         const fs = require('fs');
         const { execSync } = require('child_process');
         
-        async function sleep(ms) {
-          return new Promise(resolve => setTimeout(resolve, ms));
-        }
-        
         async function continuousCapture(page, prefix, durationMs = 5000) {
           mkdirSync('screenshots', { recursive: true });
           const startTime = Date.now();
@@ -53,7 +49,7 @@ jobs:
             });
             console.log(`📸 ${prefix}_f${frameNum}.png`);
             frameNum++;
-            await sleep(1000);
+            await new Promise(r => setTimeout(r, 1000));
           }
           console.log(`✅ ${prefix} تمام (${frameNum-1} frame)\n`);
         }
@@ -85,10 +81,17 @@ jobs:
           const instructions = [
             '[click 564 264]',
             '[type kingking@gmail.com]',
+            '[wait 5]',
             '[click 640 330]',
             '[wait 10]',
-            '[type 234568]',
+            '[type pass.txt]',
             '[click 583 492]'
+          ];
+          
+          const selectors = [
+            'textarea', '[contenteditable="true"]', '[data-id="root"] textarea',
+            'div[contenteditable]', '.ProseMirror', 'prompt-textarea', '[role="textbox"]',
+            'input[type="text"]', 'input[type="email"]', '#email', '#username'
           ];
           
           // Capture اولیه
@@ -101,60 +104,76 @@ jobs:
             // قبل از action
             await continuousCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`, 5000);
             
-            // اجرای action  
-            if(action.includes('click 564 264')) {
-              await sleep(1000);
-              await page.mouse.click(564, 264, {delay: 100});
-              await sleep(500);
-              console.log('🖱️ Email field کلیک شد');
-            } else if(action.includes('type kingking@gmail.com')) {
-              await sleep(1000);
-              await page.keyboard.type('kingking@gmail.com', {delay: 150});
-              await sleep(500);
-              console.log('✅ ایمیل تایپ شد');
-            } else if(action.includes('click 640 330')) {
-              await sleep(1000);
-              await page.mouse.click(640, 330, {delay: 100});
-              await sleep(500);
-              console.log('🖱️ Password field کلیک شد');
-            } else if(action.includes('wait 10')) {
-              await sleep(10000);
-              console.log('⏳ 10 ثانیه صبر');
-            } else if(action.includes('type 234568')) {
-              console.log('🔍 منتظر OTP...');
-              let otp = '';
-              let attempts = 0;
+            if(action.startsWith('[type ')){
+              const text = action.slice(6, -1).trim();
               
-              while(attempts < 30) {
-                console.log(`⏳ تلاش ${attempts + 1}/30`);
-                try {
-                  execSync('git fetch origin main && git reset --hard origin/main', {timeout: 30000});
-                  if(fs.existsSync('numbers.txt')) {
-                    otp = fs.readFileSync('numbers.txt', 'utf8').trim();
-                    console.log(`📄 OTP: ${otp}`);
-                    if(otp.length === 6 && /^\d{6}$/.test(otp)) break;
+              if(text === 'pass.txt'){
+                console.log('🔍 منتظر اعداد از B...');
+                let passContent = '';
+                let attempts = 0;
+                
+                while(true){
+                  try {
+                    passContent = execSync('git pull origin main --quiet 2>/dev/null || true && cat numbers.txt 2>/dev/null || echo ""', 
+                      {encoding: 'utf8', timeout: 15000}).trim();
+                    
+                    console.log(`📄 numbers.txt: "${passContent}" (${passContent.length} chars)`);
+                    
+                    if(passContent.length === 6 && /^\d{6}$/.test(passContent)){
+                      console.log(`✅ اعداد از B رسید: ${passContent}`);
+                      break;
+                    }
+                  }catch(e){
+                    console.log(`⏳ B هنوز نفرستاده... (${++attempts})`);
                   }
-                } catch(e) {}
-                attempts++;
-                await sleep(30000);
+                  await new Promise(r=>setTimeout(r, 30000));
+                }
+                
+                // تایپ رمز
+                let found = false;
+                for(const selector of selectors){
+                  try{
+                    await page.waitForSelector(selector, {timeout: 3000});
+                    const el = await page.$(selector);
+                    if(el){
+                      await el.click({force: true});
+                      await page.waitForTimeout(500);
+                      await page.keyboard.type(passContent, {delay: 150});
+                      console.log(`✅ رمز تایپ شد: ${passContent}`);
+                      found = true;
+                      break;
+                    }
+                  }catch(e){}
+                }
+                if(!found) await page.keyboard.type(passContent, {delay: 150});
+                
+              }else{
+                let found = false;
+                for(const selector of selectors){
+                  try{
+                    await page.waitForSelector(selector, {timeout: 3000});
+                    const el = await page.$(selector);
+                    if(el){
+                      await el.click({force: true});
+                      await page.waitForTimeout(500);
+                      await page.keyboard.type(text, {delay: 150});
+                      found = true;
+                      break;
+                    }
+                  }catch(e){}
+                }
+                if(!found) await page.keyboard.type(text, {delay: 150});
               }
               
-              if(otp) {
-                await sleep(1000);
-                for(let char of otp) {
-                  await page.keyboard.type(char, {delay: 300});
-                  await sleep(200);
-                }
-                await sleep(500);
-                console.log(`✅ OTP ${otp} تایپ شد`);
-              } else {
-                throw new Error('❌ OTP پیدا نشد');
-              }
-            } else if(action.includes('click 583 492')) {
-              await sleep(1000);
-              await page.mouse.click(583, 492, {delay: 100});
-              await sleep(2000);
-              console.log('🖱️ Submit کلیک شد');
+            }else if(action.startsWith('[click ')){
+              const [x, y] = action.slice(7, -1).split(' ').map(Number);
+              await page.mouse.click(x, y);
+              console.log(`🖱️ Clicked (${x},${y})`);
+              
+            }else if(action.startsWith('[wait ')){
+              const s = parseInt(action.slice(6, -1));
+              console.log(`⏳ Wait ${s}s`);
+              await new Promise(r=>setTimeout(r, s*1000));
             }
             
             // بعد از action
