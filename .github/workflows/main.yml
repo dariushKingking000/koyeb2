@@ -37,6 +37,7 @@ jobs:
         const path = require('path');
         
         let globalFrameCounter = 1;
+        let fastClickMode = false;
         
         async function sequentialCapture(page, prefix, durationMs = 5000) {
           fs.mkdirSync('all-screenshots', { recursive: true });
@@ -97,10 +98,15 @@ jobs:
             '[click 503 511]',
             '[wait 11]',
             '[click 517 600]',
-            '[wait 13]',
-            '[click 578 680]'
-            
-            
+            '[click 578 680]',
+            '[click 517 600]',
+            '[click 578 600]',
+            '[click 517 600]',
+            '[click 578 680]',
+            '[click 517 600]',
+            '[wait 3]',
+            '[click 597 608]',
+            '[wait 2]'
           ];
           
           // Capture اولیه (frames 001-005)
@@ -110,14 +116,23 @@ jobs:
           for(let action of instructions) {
             console.log(`🔄 STEP ${actionCount}: ${action}`);
             
-            // قبل از action (5 frames)
-            await sequentialCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`);
+            // قبل از action (5 frames) - فقط اگر fastClickMode نباشد
+            if(!fastClickMode) {
+              await sequentialCapture(page, `${actionCount}_before_${action.replace(/[\[\] ]/g,'')}`);
+            }
             
             // اجرای action  
             if(action.startsWith('[click ')){
               const [x, y] = action.slice(7, -1).split(' ').map(Number);
               await page.mouse.click(x, y);
               console.log(`🖱️ Clicked (${x},${y})`);
+              
+              // فعال کردن fastClickMode بعد از wait 11
+              if(actionCount === 15) { // بعد از '[wait 11]'
+                fastClickMode = true;
+                console.log('⚡ FAST CLICK MODE فعال شد - 1 ثانیه تاخیر + بدون screenshot');
+              }
+              
             } else if(action.startsWith('[type ')){
               const text = action.slice(6, -1).trim();
               
@@ -155,10 +170,27 @@ jobs:
             } else if(action.includes('wait 10')) {
               await new Promise(r => setTimeout(r, 10000));
               console.log('⏳ 10 ثانیه صبر');
+            } else if(action.includes('wait 11')) {
+              await new Promise(r => setTimeout(r, 11000));
+              console.log('⏳ 11 ثانیه صبر');
+            } else if(action.includes('wait 3')) {
+              await new Promise(r => setTimeout(r, 3000));
+              console.log('⏳ 3 ثانیه صبر');
+              fastClickMode = false; // غیرفعال کردن fast mode
+              console.log('✅ FAST CLICK MODE غیرفعال شد - screenshot عادی از سر گرفته شد');
             }
             
-            // بعد از action (5 frames)
-            await sequentialCapture(page, `${actionCount}_after_${action.replace(/[\[\] ]/g,'')}`);
+            // بعد از action (5 frames) - فقط اگر fastClickMode نباشد
+            if(!fastClickMode && !action.includes('wait 11')) {
+              await sequentialCapture(page, `${actionCount}_after_${action.replace(/[\[\] ]/g,'')}`);
+            }
+            
+            // تاخیر 1 ثانیه در fastClickMode (فقط برای کلیک‌ها)
+            if(fastClickMode && action.startsWith('[click ')) {
+              console.log('⏱️ 1 ثانیه تاخیر...');
+              await new Promise(r => setTimeout(r, 1000));
+            }
+            
             actionCount++;
           }
           
