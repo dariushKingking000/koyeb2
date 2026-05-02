@@ -81,12 +81,13 @@ jobs:
           let actionCount = 0;
           const instructions = [
             '[click 564 264]',
-            '[type kingking@gmail.com]',
+            '[type kingkingp@gmail.com]',
             '[click 640 330]',
             '[wait 10]',
             '[click 541 401]',
             '[type 234568]',
             '[click 583 492]'
+            '[wait 1
           ];
           
           // Capture اولیه (frames 001-005)
