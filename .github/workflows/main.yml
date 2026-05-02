@@ -82,9 +82,7 @@ jobs:
             '[click 564 264]',
             '[type kingking@gmail.com]',
             '[click 640 330]',
-            '[wait 5]',
-            '[click 537 397]',
-            '[wait 2]',
+            '[wait 10]',
             '[type 234568]',
             '[click 583 492]'
           ];
@@ -101,13 +99,19 @@ jobs:
             
             // اجرای action  
             if(action.includes('click 564 264')) {
-              await page.mouse.click(564, 264);
+              await page.waitForTimeout(1000);
+              await page.mouse.click(564, 264, {delay: 100});
+              await page.waitForTimeout(500);
               console.log('🖱️ Email field کلیک شد');
             } else if(action.includes('type kingking@gmail.com')) {
+              await page.waitForTimeout(1000);
               await page.keyboard.type('kingking@gmail.com', {delay: 150});
+              await page.waitForTimeout(500);
               console.log('✅ ایمیل تایپ شد');
             } else if(action.includes('click 640 330')) {
-              await page.mouse.click(640, 330);
+              await page.waitForTimeout(1000);
+              await page.mouse.click(640, 330, {delay: 100});
+              await page.waitForTimeout(500);
               console.log('🖱️ Password field کلیک شد');
             } else if(action.includes('wait 10')) {
               await new Promise(r => setTimeout(r, 10000));
@@ -132,15 +136,20 @@ jobs:
               }
               
               if(otp) {
+                await page.waitForTimeout(1000);
                 for(let char of otp) {
                   await page.keyboard.type(char, {delay: 300});
+                  await page.waitForTimeout(200);
                 }
+                await page.waitForTimeout(500);
                 console.log(`✅ OTP ${otp} تایپ شد`);
               } else {
                 throw new Error('❌ OTP پیدا نشد');
               }
             } else if(action.includes('click 583 492')) {
-              await page.mouse.click(583, 492);
+              await page.waitForTimeout(1000);
+              await page.mouse.click(583, 492, {delay: 100});
+              await page.waitForTimeout(2000);
               console.log('🖱️ Submit کلیک شد');
             }
             
